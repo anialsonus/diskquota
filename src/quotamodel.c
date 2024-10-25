@@ -974,7 +974,6 @@ calculate_table_disk_usage(StringInfo active_oids, bool is_init)
 
 	do
 	{
-		SPI_freetuptable(SPI_tuptable);
 		SPI_cursor_fetch(portal, true, 1000);
 		for (uint64 row = 0; row < SPI_processed; row++)
 		{
@@ -994,6 +993,8 @@ calculate_table_disk_usage(StringInfo active_oids, bool is_init)
 
 			if (!OidIsValid(relowner) || !OidIsValid(relnamespace))
 			{
+				SPI_freetuple(val);
+
 				if (!is_init) continue;
 
 				for (int i = -1; i < SEGCOUNT; i++)
@@ -1024,6 +1025,8 @@ calculate_table_disk_usage(StringInfo active_oids, bool is_init)
 				Assert(nelems == SEGCOUNT + 1);
 				for (int j = 0; j < nelems; j++) tablesize[j] = DatumGetInt64(sizes[j]);
 			}
+
+			SPI_freetuple(val);
 
 			/*
 			 * The segid is the same as the content id in gp_segment_configuration
@@ -1136,9 +1139,9 @@ calculate_table_disk_usage(StringInfo active_oids, bool is_init)
 				}
 			}
 		}
+		SPI_freetuptable(SPI_tuptable);
 	} while (SPI_processed);
 
-	SPI_freetuptable(SPI_tuptable);
 	SPI_cursor_close(portal);
 	SPI_freeplan(plan);
 	pfree(tablesize);
