@@ -239,7 +239,7 @@ static bool get_table_size_entry_flag(TableSizeEntry *entry, TableSizeEntryFlag 
 static void reset_table_size_entry_flag(TableSizeEntry *entry, TableSizeEntryFlag flag);
 static void set_table_size_entry_flag(TableSizeEntry *entry, TableSizeEntryFlag flag);
 
-static void delete_from_table_size_map(Datum tableid, Datum segid);
+static void delete_from_table_size_map(ArrayBuildState *tableids, ArrayBuildState *segids);
 
 /* add a new entry quota or update the old entry quota */
 static void
@@ -958,13 +958,15 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 
 					if (tableids->nelems > SQL_MAX_VALUES_NUMBER)
 					{
-						Datum tableid = makeArrayResult(tableids, CurrentMemoryContext);
-						Datum segid   = makeArrayResult(segids, CurrentMemoryContext);
-						delete_from_table_size_map(tableid, segid);
-						pfree(DatumGetPointer(tableid));
-						pfree(DatumGetPointer(segid));
+						delete_from_table_size_map(tableids, segids);
+						pfree(tableids->dvalues);
+						pfree(tableids->dnulls);
+						pfree(tableids);
 						tableids = NULL;
-						segids   = NULL;
+						pfree(segids->dvalues);
+						pfree(segids->dnulls);
+						pfree(segids);
+						segids = NULL;
 					}
 				}
 
@@ -1096,11 +1098,15 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 
 	if (tableids)
 	{
-		Datum tableid = makeArrayResult(tableids, CurrentMemoryContext);
-		Datum segid   = makeArrayResult(segids, CurrentMemoryContext);
-		delete_from_table_size_map(tableid, segid);
-		pfree(DatumGetPointer(tableid));
-		pfree(DatumGetPointer(segid));
+		delete_from_table_size_map(tableids, segids);
+		pfree(tableids->dvalues);
+		pfree(tableids->dnulls);
+		pfree(tableids);
+		tableids = NULL;
+		pfree(segids->dvalues);
+		pfree(segids->dnulls);
+		pfree(segids);
+		segids = NULL;
 	}
 
 	list_free(oidlist);
@@ -1131,10 +1137,12 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 }
 
 static void
-delete_from_table_size_map(Datum tableid, Datum segid)
+delete_from_table_size_map(ArrayBuildState *tableids, ArrayBuildState *segids)
 {
 	SPI_state state;
 	int       ret;
+	Datum tableid = makeMdArrayResult(tableids, 1, (int[]){tableids->nelems}, (int[]){1}, CurrentMemoryContext, false);
+	Datum segid   = makeMdArrayResult(segids, 1, (int[]){segids->nelems}, (int[]){1}, CurrentMemoryContext, false);
 
 	SPI_connect_my(&state);
 	ret = SPI_execute_with_args(
@@ -1144,13 +1152,18 @@ delete_from_table_size_map(Datum tableid, Datum segid)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
 	SPI_finish_my(&state);
+	pfree(DatumGetPointer(tableid));
+	pfree(DatumGetPointer(segid));
 }
 
 static void
-insert_into_table_size_map(Datum tableid, Datum size, Datum segid)
+insert_into_table_size_map(ArrayBuildState *tableids, ArrayBuildState *sizes, ArrayBuildState *segids)
 {
 	SPI_state state;
 	int       ret;
+	Datum tableid = makeMdArrayResult(tableids, 1, (int[]){tableids->nelems}, (int[]){1}, CurrentMemoryContext, false);
+	Datum size    = makeMdArrayResult(sizes, 1, (int[]){sizes->nelems}, (int[]){1}, CurrentMemoryContext, false);
+	Datum segid   = makeMdArrayResult(segids, 1, (int[]){segids->nelems}, (int[]){1}, CurrentMemoryContext, false);
 
 	SPI_connect_my(&state);
 	ret = SPI_execute_with_args("insert into diskquota.table_size select * from unnest($1, $2, $3)", 3,
@@ -1160,6 +1173,9 @@ insert_into_table_size_map(Datum tableid, Datum size, Datum segid)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] insert_into_table_size_map SPI_execute failed: error code %d", ret)));
 	SPI_finish_my(&state);
+	pfree(DatumGetPointer(tableid));
+	pfree(DatumGetPointer(size));
+	pfree(DatumGetPointer(segid));
 }
 
 /*
@@ -1197,13 +1213,15 @@ flush_to_table_size(void)
 
 				if (tableids->nelems > SQL_MAX_VALUES_NUMBER)
 				{
-					Datum tableid = makeArrayResult(tableids, CurrentMemoryContext);
-					Datum segid   = makeArrayResult(segids, CurrentMemoryContext);
-					delete_from_table_size_map(tableid, segid);
-					pfree(DatumGetPointer(tableid));
-					pfree(DatumGetPointer(segid));
+					delete_from_table_size_map(tableids, segids);
+					pfree(tableids->dvalues);
+					pfree(tableids->dnulls);
+					pfree(tableids);
 					tableids = NULL;
-					segids   = NULL;
+					pfree(segids->dvalues);
+					pfree(segids->dnulls);
+					pfree(segids);
+					segids = NULL;
 				}
 			}
 			/* update the table size by delete+insert in table table_size */
@@ -1217,17 +1235,20 @@ flush_to_table_size(void)
 
 				if (tableids->nelems > SQL_MAX_VALUES_NUMBER)
 				{
-					Datum tableid = makeArrayResult(tableids, CurrentMemoryContext);
-					Datum size    = makeArrayResult(sizes, CurrentMemoryContext);
-					Datum segid   = makeArrayResult(segids, CurrentMemoryContext);
-					delete_from_table_size_map(tableid, segid);
-					insert_into_table_size_map(tableid, size, segid);
-					pfree(DatumGetPointer(tableid));
-					pfree(DatumGetPointer(size));
-					pfree(DatumGetPointer(segid));
+					delete_from_table_size_map(tableids, segids);
+					insert_into_table_size_map(tableids, sizes, segids);
+					pfree(tableids->dvalues);
+					pfree(tableids->dnulls);
+					pfree(tableids);
 					tableids = NULL;
-					sizes    = NULL;
-					segids   = NULL;
+					pfree(sizes->dvalues);
+					pfree(sizes->dnulls);
+					pfree(sizes);
+					sizes = NULL;
+					pfree(segids->dvalues);
+					pfree(segids->dnulls);
+					pfree(segids);
+					segids = NULL;
 				}
 
 				TableSizeEntryResetFlushFlag(tsentry, i);
@@ -1241,17 +1262,23 @@ flush_to_table_size(void)
 
 	if (tableids)
 	{
-		Datum tableid = makeArrayResult(tableids, CurrentMemoryContext);
-		Datum segid   = makeArrayResult(segids, CurrentMemoryContext);
-		delete_from_table_size_map(tableid, segid);
+		delete_from_table_size_map(tableids, segids);
 		if (sizes)
 		{
-			Datum size = makeArrayResult(sizes, CurrentMemoryContext);
-			insert_into_table_size_map(tableid, size, segid);
-			pfree(DatumGetPointer(size));
+			insert_into_table_size_map(tableids, sizes, segids);
+			pfree(sizes->dvalues);
+			pfree(sizes->dnulls);
+			pfree(sizes);
+			sizes = NULL;
 		}
-		pfree(DatumGetPointer(tableid));
-		pfree(DatumGetPointer(segid));
+		pfree(tableids->dvalues);
+		pfree(tableids->dnulls);
+		pfree(tableids);
+		tableids = NULL;
+		pfree(segids->dvalues);
+		pfree(segids->dnulls);
+		pfree(segids);
+		segids = NULL;
 	}
 
 	optimizer = old_optimizer;
