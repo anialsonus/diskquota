@@ -46,6 +46,7 @@
 #include "utils/faultinjector.h"
 #include "utils/fmgroids.h"
 #include "utils/formatting.h"
+#include "utils/memutils.h"
 #include "utils/numeric.h"
 #include "libpq-fe.h"
 #include "funcapi.h"
