@@ -784,6 +784,7 @@ refresh_disk_quota_model(bool is_init)
 static void
 refresh_disk_quota_usage(bool is_init)
 {
+	bool  pushed_active_snap          = false;
 	bool  ret                         = true;
 	HTAB *local_active_table_stat_map = NULL;
 
@@ -795,6 +796,8 @@ refresh_disk_quota_usage(bool is_init)
 	PG_TRY();
 	{
 		StartTransactionCommand();
+		PushActiveSnapshot(GetTransactionSnapshot());
+		pushed_active_snap = true;
 		/*
 		 * initialization stage all the tables are active. later loop, only the
 		 * tables whose disk size changed will be treated as active
@@ -834,6 +837,7 @@ refresh_disk_quota_usage(bool is_init)
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
+	if (pushed_active_snap) PopActiveSnapshot();
 	if (ret)
 		CommitTransactionCommand();
 	else
