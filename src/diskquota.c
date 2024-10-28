@@ -962,6 +962,7 @@ create_monitor_db_table(void)
 	bool        connected          = false;
 	bool        pushed_active_snap = false;
 	bool        ret                = true;
+	bool        transaction        = true;
 
 	/*
 	 * Create function diskquota.diskquota_fetch_table_stat in launcher
@@ -988,7 +989,7 @@ create_monitor_db_table(void)
 	 */
 	PG_TRY();
 	{
-		SPI_connect_my(&connected, &pushed_active_snap, &ret);
+		SPI_connect_my(&connected, &pushed_active_snap, &ret, &transaction);
 
 		/* debug_query_string need to be set for SPI_execute utility functions. */
 		debug_query_string = sql;
@@ -1013,7 +1014,7 @@ create_monitor_db_table(void)
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	SPI_finish_my(connected, pushed_active_snap, ret);
+	SPI_finish_my(connected, pushed_active_snap, ret, transaction);
 
 	debug_query_string = NULL;
 }
@@ -1029,6 +1030,7 @@ init_database_list(void)
 	bool      connected          = false;
 	bool      pushed_active_snap = false;
 	bool      commit             = true;
+	bool      transaction        = true;
 	int       num                = 0;
 	int       ret;
 	int       i;
@@ -1038,7 +1040,7 @@ init_database_list(void)
 	 * startup worker for diskquota launcher. If error happens, we just let
 	 * launcher exits.
 	 */
-	SPI_connect_my(&connected, &pushed_active_snap, &commit);
+	SPI_connect_my(&connected, &pushed_active_snap, &commit, &transaction);
 
 	ret = SPI_execute("select dbid from diskquota_namespace.database_list;", true, 0);
 	if (ret != SPI_OK_SELECT)
@@ -1108,7 +1110,7 @@ init_database_list(void)
 			update_monitor_db_mpp(dbEntry->dbid, ADD_DB_TO_MONITOR, LAUNCHER_SCHEMA);
 		}
 	}
-	SPI_finish_my(connected, pushed_active_snap, commit);
+	SPI_finish_my(connected, pushed_active_snap, commit, transaction);
 	/* TODO: clean invalid database */
 	if (num_db > diskquota_max_workers) DiskquotaLauncherShmem->isDynamicWorker = true;
 }
@@ -1161,6 +1163,7 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 	bool connected          = false;
 	bool pushed_active_snap = false;
 	bool ret                = true;
+	bool transaction        = true;
 
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
@@ -1169,7 +1172,7 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 	 */
 	PG_TRY();
 	{
-		SPI_connect_my(&connected, &pushed_active_snap, &ret);
+		SPI_connect_my(&connected, &pushed_active_snap, &ret, &transaction);
 
 		switch (local_extension_ddl_message.cmd)
 		{
@@ -1202,7 +1205,7 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 	}
 	PG_END_TRY();
 
-	SPI_finish_my(connected, pushed_active_snap, ret);
+	SPI_finish_my(connected, pushed_active_snap, ret, transaction);
 
 	/* update something in memory after transaction committed */
 	if (ret)
@@ -1211,7 +1214,7 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 		{
 			/* update_monitor_db_mpp runs sql to distribute dbid to segments */
 			Oid dbid = local_extension_ddl_message.dbid;
-			SPI_connect_my(&connected, &pushed_active_snap, &ret);
+			SPI_connect_my(&connected, &pushed_active_snap, &ret, &transaction);
 			switch (local_extension_ddl_message.cmd)
 			{
 				case CMD_CREATE_EXTENSION:
@@ -1244,7 +1247,7 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 		}
 		PG_END_TRY();
 
-		SPI_finish_my(connected, pushed_active_snap, ret);
+		SPI_finish_my(connected, pushed_active_snap, ret, transaction);
 	}
 	DisconnectAndDestroyAllGangs(false);
 }

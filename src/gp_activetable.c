@@ -952,7 +952,13 @@ load_table_size(HTAB *local_table_stats_map)
 	ActiveTableEntryCombined *quota_entry;
 	SPIPlanPtr                plan;
 	Portal                    portal;
-	char                     *sql = "select tableid, size, segid from diskquota.table_size";
+	char                     *sql                = "select tableid, size, segid from diskquota.table_size";
+	bool                      connected          = false;
+	bool                      pushed_active_snap = false;
+	bool                      commit             = true;
+	bool                      transaction        = true;
+
+	SPI_connect_my(&connected, &pushed_active_snap, &commit, &transaction);
 
 	if ((plan = SPI_prepare(sql, 0, NULL)) == NULL)
 		ereport(ERROR, (errmsg("[diskquota] SPI_prepare(\"%s\") failed", sql)));
@@ -1028,6 +1034,7 @@ load_table_size(HTAB *local_table_stats_map)
 	SPI_freetuptable(SPI_tuptable);
 	SPI_cursor_close(portal);
 	SPI_freeplan(plan);
+	SPI_finish_my(connected, pushed_active_snap, commit, transaction);
 }
 
 /*
