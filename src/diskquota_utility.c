@@ -1735,8 +1735,11 @@ SPI_connect_my(SPI_state *state)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_connect failed"),
 		                errdetail("%s", SPI_result_code_string(rc))));
 	state->is_connected = true;
-	PushActiveSnapshot(GetTransactionSnapshot());
-	state->is_active_snapshot_pushed = true;
+	if (state->is_under_transaction)
+	{
+		PushActiveSnapshot(GetTransactionSnapshot());
+		state->is_active_snapshot_pushed = true;
+	}
 }
 
 void
@@ -1744,10 +1747,10 @@ SPI_finish_my(const SPI_state *state)
 {
 	int rc;
 
-	if (state->is_active_snapshot_pushed) PopActiveSnapshot();
 	if (state->is_connected && (rc = SPI_finish()) != SPI_OK_FINISH)
 		ereport(WARNING, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_finish failed"),
 		                  errdetail("%s", SPI_result_code_string(rc))));
+	if (state->is_active_snapshot_pushed) PopActiveSnapshot();
 	if (state->is_under_transaction)
 	{
 		if (state->do_commit)
