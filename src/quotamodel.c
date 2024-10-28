@@ -959,14 +959,8 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 					if (tableids->nelems > SQL_MAX_VALUES_NUMBER)
 					{
 						delete_from_table_size_map(tableids, segids);
-						pfree(tableids->dvalues);
-						pfree(tableids->dnulls);
-						pfree(tableids);
 						tableids = NULL;
-						pfree(segids->dvalues);
-						pfree(segids->dnulls);
-						pfree(segids);
-						segids = NULL;
+						segids   = NULL;
 					}
 				}
 
@@ -1096,18 +1090,7 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 		}
 	}
 
-	if (tableids)
-	{
-		delete_from_table_size_map(tableids, segids);
-		pfree(tableids->dvalues);
-		pfree(tableids->dnulls);
-		pfree(tableids);
-		tableids = NULL;
-		pfree(segids->dvalues);
-		pfree(segids->dnulls);
-		pfree(segids);
-		segids = NULL;
-	}
+	if (tableids) delete_from_table_size_map(tableids, segids);
 
 	list_free(oidlist);
 
@@ -1141,8 +1124,8 @@ delete_from_table_size_map(ArrayBuildState *tableids, ArrayBuildState *segids)
 {
 	SPI_state state;
 	int       ret;
-	Datum tableid = makeMdArrayResult(tableids, 1, (int[]){tableids->nelems}, (int[]){1}, CurrentMemoryContext, false);
-	Datum segid   = makeMdArrayResult(segids, 1, (int[]){segids->nelems}, (int[]){1}, CurrentMemoryContext, false);
+	Datum     tableid = makeArrayResult(tableids, CurrentMemoryContext);
+	Datum     segid   = makeArrayResult(segids, CurrentMemoryContext);
 
 	SPI_connect_my(&state);
 	ret = SPI_execute_with_args(
@@ -1152,18 +1135,28 @@ delete_from_table_size_map(ArrayBuildState *tableids, ArrayBuildState *segids)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
 	SPI_finish_my(&state);
+
 	pfree(DatumGetPointer(tableid));
 	pfree(DatumGetPointer(segid));
 }
 
 static void
-insert_into_table_size_map(ArrayBuildState *tableids, ArrayBuildState *sizes, ArrayBuildState *segids)
+update_table_size_map(ArrayBuildState *tableids, ArrayBuildState *sizes, ArrayBuildState *segids)
 {
 	SPI_state state;
 	int       ret;
-	Datum tableid = makeMdArrayResult(tableids, 1, (int[]){tableids->nelems}, (int[]){1}, CurrentMemoryContext, false);
-	Datum size    = makeMdArrayResult(sizes, 1, (int[]){sizes->nelems}, (int[]){1}, CurrentMemoryContext, false);
-	Datum segid   = makeMdArrayResult(segids, 1, (int[]){segids->nelems}, (int[]){1}, CurrentMemoryContext, false);
+	Datum     tableid = makeArrayResult(tableids, CurrentMemoryContext);
+	Datum     size    = makeArrayResult(sizes, CurrentMemoryContext);
+	Datum     segid   = makeArrayResult(segids, CurrentMemoryContext);
+
+	SPI_connect_my(&state);
+	ret = SPI_execute_with_args(
+	        "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
+	        (Oid[]){OIDARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, segid}, NULL, false, 0);
+	if (ret != SPI_OK_DELETE)
+		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
+		                errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
+	SPI_finish_my(&state);
 
 	SPI_connect_my(&state);
 	ret = SPI_execute_with_args("insert into diskquota.table_size select * from unnest($1, $2, $3)", 3,
@@ -1173,6 +1166,7 @@ insert_into_table_size_map(ArrayBuildState *tableids, ArrayBuildState *sizes, Ar
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] insert_into_table_size_map SPI_execute failed: error code %d", ret)));
 	SPI_finish_my(&state);
+
 	pfree(DatumGetPointer(tableid));
 	pfree(DatumGetPointer(size));
 	pfree(DatumGetPointer(segid));
@@ -1214,14 +1208,8 @@ flush_to_table_size(void)
 				if (tableids->nelems > SQL_MAX_VALUES_NUMBER)
 				{
 					delete_from_table_size_map(tableids, segids);
-					pfree(tableids->dvalues);
-					pfree(tableids->dnulls);
-					pfree(tableids);
 					tableids = NULL;
-					pfree(segids->dvalues);
-					pfree(segids->dnulls);
-					pfree(segids);
-					segids = NULL;
+					segids   = NULL;
 				}
 			}
 			/* update the table size by delete+insert in table table_size */
@@ -1235,20 +1223,10 @@ flush_to_table_size(void)
 
 				if (tableids->nelems > SQL_MAX_VALUES_NUMBER)
 				{
-					delete_from_table_size_map(tableids, segids);
-					insert_into_table_size_map(tableids, sizes, segids);
-					pfree(tableids->dvalues);
-					pfree(tableids->dnulls);
-					pfree(tableids);
+					update_table_size_map(tableids, sizes, segids);
 					tableids = NULL;
-					pfree(sizes->dvalues);
-					pfree(sizes->dnulls);
-					pfree(sizes);
-					sizes = NULL;
-					pfree(segids->dvalues);
-					pfree(segids->dnulls);
-					pfree(segids);
-					segids = NULL;
+					sizes    = NULL;
+					segids   = NULL;
 				}
 
 				TableSizeEntryResetFlushFlag(tsentry, i);
@@ -1262,23 +1240,10 @@ flush_to_table_size(void)
 
 	if (tableids)
 	{
-		delete_from_table_size_map(tableids, segids);
 		if (sizes)
-		{
-			insert_into_table_size_map(tableids, sizes, segids);
-			pfree(sizes->dvalues);
-			pfree(sizes->dnulls);
-			pfree(sizes);
-			sizes = NULL;
-		}
-		pfree(tableids->dvalues);
-		pfree(tableids->dnulls);
-		pfree(tableids);
-		tableids = NULL;
-		pfree(segids->dvalues);
-		pfree(segids->dnulls);
-		pfree(segids);
-		segids = NULL;
+			update_table_size_map(tableids, sizes, segids);
+		else
+			delete_from_table_size_map(tableids, segids);
 	}
 
 	optimizer = old_optimizer;
