@@ -1338,7 +1338,7 @@ get_rel_oid_list(bool is_init)
 		if (!isnull)
 		{
 			List         *indexIds;
-			MemoryContext oldcontext = MemoryContextSwitchTo(TopMemoryContext);
+			MemoryContext oldcontext = MemoryContextSwitchTo(CurTransactionContext);
 			oidlist                  = lappend_oid(oidlist, oid);
 			indexIds                 = diskquota_get_index_list(oid);
 			if (indexIds != NIL)
