@@ -1732,7 +1732,7 @@ SPI_finish_my(bool connected, bool pushed_active_snap, bool ret)
 	if (pushed_active_snap) PopActiveSnapshot();
 	if (connected && (rc = SPI_finish()) != SPI_OK_FINISH)
 		ereport(WARNING, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_finish failed"),
-		                errdetail("%s", SPI_result_code_string(rc))));
+		                  errdetail("%s", SPI_result_code_string(rc))));
 	if (ret)
 		CommitTransactionCommand();
 	else
