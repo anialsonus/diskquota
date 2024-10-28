@@ -1200,7 +1200,7 @@ flush_to_table_size(void)
 				}
 			}
 			/* update the table size by delete+insert in table table_size */
-			else if (TableSizeEntryGetFlushFlag(tsentry, i)) //
+			else if (TableSizeEntryGetFlushFlag(tsentry, i))
 			{
 				appendStringInfo(&delete_statement, "%s(%u,%d)", (delete_entries_num == 0) ? " " : ", ",
 				                 tsentry->key.reloid, i);
