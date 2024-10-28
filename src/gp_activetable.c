@@ -946,17 +946,14 @@ get_active_tables_oid(void)
 static void
 load_table_size(HTAB *local_table_stats_map)
 {
+	bool                      connected, pushed_active_snap, commit, transaction;
 	TupleDesc                 tupdesc;
 	int                       i;
 	bool                      found;
 	ActiveTableEntryCombined *quota_entry;
 	SPIPlanPtr                plan;
 	Portal                    portal;
-	char                     *sql                = "select tableid, size, segid from diskquota.table_size";
-	bool                      connected          = false;
-	bool                      pushed_active_snap = false;
-	bool                      commit             = true;
-	bool                      transaction        = true;
+	char                     *sql = "select tableid, size, segid from diskquota.table_size";
 
 	SPI_connect_my(&connected, &pushed_active_snap, &commit, &transaction);
 

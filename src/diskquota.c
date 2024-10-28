@@ -958,11 +958,8 @@ disk_quota_launcher_main(Datum main_arg)
 static void
 create_monitor_db_table(void)
 {
+	bool        connected, pushed_active_snap, commit, transaction;
 	const char *sql;
-	bool        connected          = false;
-	bool        pushed_active_snap = false;
-	bool        ret                = true;
-	bool        transaction        = true;
 
 	/*
 	 * Create function diskquota.diskquota_fetch_table_stat in launcher
@@ -989,7 +986,7 @@ create_monitor_db_table(void)
 	 */
 	PG_TRY();
 	{
-		SPI_connect_my(&connected, &pushed_active_snap, &ret, &transaction);
+		SPI_connect_my(&connected, &pushed_active_snap, &commit, &transaction);
 
 		/* debug_query_string need to be set for SPI_execute utility functions. */
 		debug_query_string = sql;
@@ -1008,13 +1005,13 @@ create_monitor_db_table(void)
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
-		ret                = false;
+		commit             = false;
 		debug_query_string = NULL;
 		/* Now we can allow interrupts again */
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	SPI_finish_my(connected, pushed_active_snap, ret, transaction);
+	SPI_finish_my(connected, pushed_active_snap, commit, transaction);
 
 	debug_query_string = NULL;
 }
@@ -1026,12 +1023,9 @@ create_monitor_db_table(void)
 static void
 init_database_list(void)
 {
+	bool      connected, pushed_active_snap, commit, transaction;
 	TupleDesc tupdesc;
-	bool      connected          = false;
-	bool      pushed_active_snap = false;
-	bool      commit             = true;
-	bool      transaction        = true;
-	int       num                = 0;
+	int       num = 0;
 	int       ret;
 	int       i;
 
@@ -1159,11 +1153,8 @@ process_extension_ddl_message()
 static void
 do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_extension_ddl_message)
 {
-	int  old_num_db         = num_db;
-	bool connected          = false;
-	bool pushed_active_snap = false;
-	bool ret                = true;
-	bool transaction        = true;
+	bool connected, pushed_active_snap, commit, transaction;
+	int  old_num_db = num_db;
 
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
@@ -1172,7 +1163,7 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 	 */
 	PG_TRY();
 	{
-		SPI_connect_my(&connected, &pushed_active_snap, &ret, &transaction);
+		SPI_connect_my(&connected, &pushed_active_snap, &commit, &transaction);
 
 		switch (local_extension_ddl_message.cmd)
 		{
@@ -1199,22 +1190,22 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
-		ret    = false;
+		commit = false;
 		num_db = old_num_db;
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
 
-	SPI_finish_my(connected, pushed_active_snap, ret, transaction);
+	SPI_finish_my(connected, pushed_active_snap, commit, transaction);
 
 	/* update something in memory after transaction committed */
-	if (ret)
+	if (commit)
 	{
 		PG_TRY();
 		{
 			/* update_monitor_db_mpp runs sql to distribute dbid to segments */
 			Oid dbid = local_extension_ddl_message.dbid;
-			SPI_connect_my(&connected, &pushed_active_snap, &ret, &transaction);
+			SPI_connect_my(&connected, &pushed_active_snap, &commit, &transaction);
 			switch (local_extension_ddl_message.cmd)
 			{
 				case CMD_CREATE_EXTENSION:
@@ -1243,11 +1234,12 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 			HOLD_INTERRUPTS();
 			EmitErrorReport();
 			FlushErrorState();
+			commit = false;
 			RESUME_INTERRUPTS();
 		}
 		PG_END_TRY();
 
-		SPI_finish_my(connected, pushed_active_snap, ret, transaction);
+		SPI_finish_my(connected, pushed_active_snap, commit, transaction);
 	}
 	DisconnectAndDestroyAllGangs(false);
 }

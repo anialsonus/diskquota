@@ -673,11 +673,8 @@ vacuum_disk_quota_model(uint32 id)
 bool
 check_diskquota_state_is_ready()
 {
-	bool is_ready           = false;
-	bool connected          = false;
-	bool pushed_active_snap = false;
-	bool ret                = true;
-	bool transaction        = true;
+	bool connected, pushed_active_snap, commit, transaction;
+	bool is_ready = false;
 
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
@@ -686,7 +683,7 @@ check_diskquota_state_is_ready()
 	 */
 	PG_TRY();
 	{
-		SPI_connect_my(&connected, &pushed_active_snap, &ret, &transaction);
+		SPI_connect_my(&connected, &pushed_active_snap, &commit, &transaction);
 		is_ready = do_check_diskquota_state_is_ready();
 	}
 	PG_CATCH();
@@ -695,12 +692,12 @@ check_diskquota_state_is_ready()
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
-		ret = false;
+		commit = false;
 		/* Now we can allow interrupts again */
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	SPI_finish_my(connected, pushed_active_snap, ret, transaction);
+	SPI_finish_my(connected, pushed_active_snap, commit, transaction);
 	return is_ready;
 }
 
@@ -1125,12 +1122,9 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 static void
 delete_from_table_size_map(char *str)
 {
+	bool           connected, pushed_active_snap, commit, transaction;
 	StringInfoData delete_statement;
 	int            ret;
-	bool           connected          = false;
-	bool           pushed_active_snap = false;
-	bool           commit             = true;
-	bool           transaction        = true;
 
 	initStringInfo(&delete_statement);
 	appendStringInfo(&delete_statement,
@@ -1150,12 +1144,9 @@ delete_from_table_size_map(char *str)
 static void
 insert_into_table_size_map(char *str)
 {
+	bool           connected, pushed_active_snap, commit, transaction;
 	StringInfoData insert_statement;
 	int            ret;
-	bool           connected          = false;
-	bool           pushed_active_snap = false;
-	bool           commit             = true;
-	bool           transaction        = true;
 
 	initStringInfo(&insert_statement);
 	appendStringInfo(&insert_statement, "insert into diskquota.table_size values %s;", str);
@@ -1214,7 +1205,7 @@ flush_to_table_size(void)
 				}
 			}
 			/* update the table size by delete+insert in table table_size */
-			else // if (TableSizeEntryGetFlushFlag(tsentry, i))
+			else if (TableSizeEntryGetFlushFlag(tsentry, i))
 			{
 				appendStringInfo(&delete_statement, "%s(%u,%d)", (delete_entries_num == 0) ? " " : ", ",
 				                 tsentry->key.reloid, i);
@@ -1398,10 +1389,7 @@ truncateStringInfo(StringInfo str, int nchars)
 static bool
 load_quotas(void)
 {
-	bool connected          = false;
-	bool pushed_active_snap = false;
-	bool ret                = true;
-	bool transaction        = true;
+	bool connected, pushed_active_snap, commit, transaction;
 
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
@@ -1410,7 +1398,7 @@ load_quotas(void)
 	 */
 	PG_TRY();
 	{
-		SPI_connect_my(&connected, &pushed_active_snap, &ret, &transaction);
+		SPI_connect_my(&connected, &pushed_active_snap, &commit, &transaction);
 		do_load_quotas();
 	}
 	PG_CATCH();
@@ -1419,13 +1407,13 @@ load_quotas(void)
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
-		ret = false;
+		commit = false;
 		/* Now we can allow interrupts again */
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	SPI_finish_my(connected, pushed_active_snap, ret, transaction);
-	return ret;
+	SPI_finish_my(connected, pushed_active_snap, commit, transaction);
+	return commit;
 }
 
 /*

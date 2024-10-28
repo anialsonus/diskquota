@@ -1235,10 +1235,7 @@ set_per_segment_quota(PG_FUNCTION_ARGS)
 int
 worker_spi_get_extension_version(int *major, int *minor)
 {
-	bool connected          = false;
-	bool pushed_active_snap = false;
-	bool commit             = true;
-	bool transaction        = true;
+	bool connected, pushed_active_snap, commit, transaction;
 	int  ret;
 
 	SPI_connect_my(&connected, &pushed_active_snap, &commit, &transaction);
@@ -1303,12 +1300,9 @@ out:
 List *
 get_rel_oid_list(bool is_init)
 {
+	bool  connected, pushed_active_snap, commit, transaction;
 	List *oidlist = NIL;
 	int   ret;
-	bool  connected          = false;
-	bool  pushed_active_snap = false;
-	bool  commit             = true;
-	bool  transaction        = true;
 
 	SPI_connect_my(&connected, &pushed_active_snap, &commit, &transaction);
 
@@ -1721,15 +1715,16 @@ check_hash_fullness(HTAB *hashp, int max_size, const char *warning_message, Time
 }
 
 void
-SPI_connect_my(bool *connected, bool *pushed_active_snap, bool *ret, bool *transaction)
+SPI_connect_my(bool *connected, bool *pushed_active_snap, bool *commit, bool *transaction)
 {
 	int rc;
+
+	*connected          = false;
+	*pushed_active_snap = false;
+	*transaction        = false;
+	*commit             = true;
 	SetCurrentStatementStartTimestamp();
-	if (IsTransactionState())
-	{
-		*transaction = false;
-	}
-	else
+	if (!IsTransactionState())
 	{
 		StartTransactionCommand();
 		*transaction = true;
@@ -1740,20 +1735,20 @@ SPI_connect_my(bool *connected, bool *pushed_active_snap, bool *ret, bool *trans
 	*connected = true;
 	PushActiveSnapshot(GetTransactionSnapshot());
 	*pushed_active_snap = true;
-	*ret                = true;
 }
 
 void
-SPI_finish_my(bool connected, bool pushed_active_snap, bool ret, bool transaction)
+SPI_finish_my(bool connected, bool pushed_active_snap, bool commit, bool transaction)
 {
 	int rc;
+
 	if (pushed_active_snap) PopActiveSnapshot();
 	if (connected && (rc = SPI_finish()) != SPI_OK_FINISH)
 		ereport(WARNING, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_finish failed"),
 		                  errdetail("%s", SPI_result_code_string(rc))));
 	if (transaction)
 	{
-		if (ret)
+		if (commit)
 			CommitTransactionCommand();
 		else
 			AbortCurrentTransaction();

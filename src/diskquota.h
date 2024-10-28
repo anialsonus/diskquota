@@ -319,6 +319,6 @@ extern HTAB *DiskquotaShmemInitHash(const char *name, long init_size, long max_s
 extern void  refresh_monitored_dbid_cache(void);
 extern HASHACTION check_hash_fullness(HTAB *hashp, int max_size, const char *warning_message,
                                       TimestampTz *last_overflow_report);
-void              SPI_connect_my(bool *connected, bool *pushed_active_snap, bool *ret, bool *transaction);
-void              SPI_finish_my(bool connected, bool pushed_active_snap, bool ret, bool transaction);
+void              SPI_connect_my(bool *connected, bool *pushed_active_snap, bool *commit, bool *transaction);
+void              SPI_finish_my(bool connected, bool pushed_active_snap, bool commit, bool transaction);
 #endif
