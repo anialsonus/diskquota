@@ -1181,9 +1181,19 @@ update_table_size_map(ArrayBuildState *tableids, ArrayBuildState *sizes, ArrayBu
 static void
 flush_to_table_size(void)
 {
-	HASH_SEQ_STATUS  iter;
-	TableSizeEntry  *tsentry  = NULL;
-	ArrayBuildState *tableids = NULL, *sizes = NULL, *segids = NULL;
+	HASH_SEQ_STATUS iter;
+	TableSizeEntry *tsentry = NULL;
+	struct
+	{
+		ArrayBuildState *tableids;
+		ArrayBuildState *segids;
+	} delete = {0};
+	struct
+	{
+		ArrayBuildState *tableids;
+		ArrayBuildState *sizes;
+		ArrayBuildState *segids;
+	} update = {0};
 
 	/* TODO: Add flush_size_interval to avoid flushing size info in every loop */
 
@@ -1201,32 +1211,32 @@ flush_to_table_size(void)
 			/* delete dropped table from both table_size_map and table table_size */
 			if (!get_table_size_entry_flag(tsentry, TABLE_EXIST))
 			{
-				tableids = accumArrayResult(tableids, ObjectIdGetDatum(tsentry->key.reloid), false, OIDOID,
-				                            CurrentMemoryContext);
-				segids   = accumArrayResult(segids, Int16GetDatum(i), false, INT2OID, CurrentMemoryContext);
+				delete.tableids = accumArrayResult(delete.tableids, ObjectIdGetDatum(tsentry->key.reloid), false,
+				                                   OIDOID, CurrentMemoryContext);
+				delete.segids = accumArrayResult(delete.segids, Int16GetDatum(i), false, INT2OID, CurrentMemoryContext);
 
-				if (tableids->nelems > SQL_MAX_VALUES_NUMBER)
+				if (delete.tableids->nelems > SQL_MAX_VALUES_NUMBER)
 				{
-					delete_from_table_size_map(tableids, segids);
-					tableids = NULL;
-					segids   = NULL;
+					delete_from_table_size_map(delete.tableids, delete.segids);
+					delete.tableids = NULL;
+					delete.segids   = NULL;
 				}
 			}
 			/* update the table size by delete+insert in table table_size */
 			else if (TableSizeEntryGetFlushFlag(tsentry, i))
 			{
-				tableids = accumArrayResult(tableids, ObjectIdGetDatum(tsentry->key.reloid), false, OIDOID,
-				                            CurrentMemoryContext);
-				sizes    = accumArrayResult(sizes, Int64GetDatum(TableSizeEntryGetSize(tsentry, i)), false, INT8OID,
-				                            CurrentMemoryContext);
-				segids   = accumArrayResult(segids, Int16GetDatum(i), false, INT2OID, CurrentMemoryContext);
+				update.tableids = accumArrayResult(update.tableids, ObjectIdGetDatum(tsentry->key.reloid), false,
+				                                   OIDOID, CurrentMemoryContext);
+				update.sizes  = accumArrayResult(update.sizes, Int64GetDatum(TableSizeEntryGetSize(tsentry, i)), false,
+				                                 INT8OID, CurrentMemoryContext);
+				update.segids = accumArrayResult(update.segids, Int16GetDatum(i), false, INT2OID, CurrentMemoryContext);
 
-				if (tableids->nelems > SQL_MAX_VALUES_NUMBER)
+				if (update.tableids->nelems > SQL_MAX_VALUES_NUMBER)
 				{
-					update_table_size_map(tableids, sizes, segids);
-					tableids = NULL;
-					sizes    = NULL;
-					segids   = NULL;
+					update_table_size_map(update.tableids, update.sizes, update.segids);
+					update.tableids = NULL;
+					update.sizes    = NULL;
+					update.segids   = NULL;
 				}
 
 				TableSizeEntryResetFlushFlag(tsentry, i);
@@ -1238,13 +1248,8 @@ flush_to_table_size(void)
 		}
 	}
 
-	if (tableids)
-	{
-		if (sizes)
-			update_table_size_map(tableids, sizes, segids);
-		else
-			delete_from_table_size_map(tableids, segids);
-	}
+	if (delete.tableids) delete_from_table_size_map(delete.tableids, delete.segids);
+	if (update.tableids) update_table_size_map(update.tableids, update.sizes, update.segids);
 
 	optimizer = old_optimizer;
 }
