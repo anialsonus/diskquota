@@ -896,8 +896,7 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 	TableSizeEntryKey         key;
 	List                     *oidlist;
 	ListCell                 *l;
-	int                       delete_entries_num    = 0;
-	ArrayBuildState          *delete_tableid_astate = NULL, *delete_segid_astate = NULL;
+	ArrayBuildState          *tableid_astate = NULL, *segid_astate = NULL;
 
 	/*
 	 * unset is_exist flag for tsentry in table_size_map this is used to
@@ -953,19 +952,16 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 
 				for (int i = -1; i < SEGCOUNT; i++)
 				{
-					delete_tableid_astate = accumArrayResult(delete_tableid_astate, ObjectIdGetDatum(relOid), false,
-					                                         OIDOID, CurrentMemoryContext);
-					delete_segid_astate   = accumArrayResult(delete_segid_astate, Int16GetDatum(i), false, INT2OID,
-					                                         CurrentMemoryContext);
+					tableid_astate = accumArrayResult(tableid_astate, ObjectIdGetDatum(relOid), false, OIDOID,
+					                                  CurrentMemoryContext);
+					segid_astate =
+					        accumArrayResult(segid_astate, Int16GetDatum(i), false, INT2OID, CurrentMemoryContext);
 
-					delete_entries_num++;
-
-					if (delete_entries_num > SQL_MAX_VALUES_NUMBER)
+					if (tableid_astate->nelems > SQL_MAX_VALUES_NUMBER)
 					{
-						delete_from_table_size_map(delete_tableid_astate, delete_segid_astate);
-						delete_tableid_astate = NULL;
-						delete_segid_astate   = NULL;
-						delete_entries_num    = 0;
+						delete_from_table_size_map(tableid_astate, segid_astate);
+						tableid_astate = NULL;
+						segid_astate   = NULL;
 					}
 				}
 
@@ -1095,7 +1091,7 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 		}
 	}
 
-	if (delete_entries_num) delete_from_table_size_map(delete_tableid_astate, delete_segid_astate);
+	if (tableid_astate) delete_from_table_size_map(tableid_astate, segid_astate);
 
 	list_free(oidlist);
 
@@ -1179,8 +1175,6 @@ flush_to_table_size(void)
 	TableSizeEntry  *tsentry               = NULL;
 	ArrayBuildState *delete_tableid_astate = NULL, *delete_segid_astate = NULL;
 	ArrayBuildState *insert_tableid_astate = NULL, *insert_size_astate = NULL, *insert_segid_astate = NULL;
-	int              delete_entries_num = 0;
-	int              insert_entries_num = 0;
 
 	/* TODO: Add flush_size_interval to avoid flushing size info in every loop */
 
@@ -1203,13 +1197,11 @@ flush_to_table_size(void)
 				delete_segid_astate =
 				        accumArrayResult(delete_segid_astate, Int16GetDatum(i), false, INT2OID, CurrentMemoryContext);
 
-				delete_entries_num++;
-				if (delete_entries_num > SQL_MAX_VALUES_NUMBER)
+				if (delete_tableid_astate->nelems > SQL_MAX_VALUES_NUMBER)
 				{
 					delete_from_table_size_map(delete_tableid_astate, delete_segid_astate);
 					delete_tableid_astate = NULL;
 					delete_segid_astate   = NULL;
-					delete_entries_num    = 0;
 				}
 			}
 			/* update the table size by delete+insert in table table_size */
@@ -1228,23 +1220,19 @@ flush_to_table_size(void)
 				insert_segid_astate =
 				        accumArrayResult(insert_segid_astate, Int16GetDatum(i), false, INT2OID, CurrentMemoryContext);
 
-				delete_entries_num++;
-				insert_entries_num++;
-
-				if (delete_entries_num > SQL_MAX_VALUES_NUMBER)
+				if (delete_tableid_astate->nelems > SQL_MAX_VALUES_NUMBER)
 				{
 					delete_from_table_size_map(delete_tableid_astate, delete_segid_astate);
 					delete_tableid_astate = NULL;
 					delete_segid_astate   = NULL;
-					delete_entries_num    = 0;
 				}
-				if (insert_entries_num > SQL_MAX_VALUES_NUMBER)
+
+				if (insert_tableid_astate->nelems > SQL_MAX_VALUES_NUMBER)
 				{
 					insert_into_table_size_map(insert_tableid_astate, insert_size_astate, insert_segid_astate);
 					insert_tableid_astate = NULL;
 					insert_size_astate    = NULL;
 					insert_segid_astate   = NULL;
-					insert_entries_num    = 0;
 				}
 
 				TableSizeEntryResetFlushFlag(tsentry, i);
@@ -1256,8 +1244,9 @@ flush_to_table_size(void)
 		}
 	}
 
-	if (delete_entries_num) delete_from_table_size_map(delete_tableid_astate, delete_segid_astate);
-	if (insert_entries_num) insert_into_table_size_map(insert_tableid_astate, insert_size_astate, insert_segid_astate);
+	if (delete_tableid_astate) delete_from_table_size_map(delete_tableid_astate, delete_segid_astate);
+	if (insert_tableid_astate)
+		insert_into_table_size_map(insert_tableid_astate, insert_size_astate, insert_segid_astate);
 
 	optimizer = old_optimizer;
 }
