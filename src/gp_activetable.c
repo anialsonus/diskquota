@@ -946,7 +946,7 @@ get_active_tables_oid(void)
 static void
 load_table_size(HTAB *local_table_stats_map)
 {
-	bool                      connected, pushed_active_snap, commit, transaction;
+	SPI_state                 state;
 	TupleDesc                 tupdesc;
 	int                       i;
 	bool                      found;
@@ -955,7 +955,7 @@ load_table_size(HTAB *local_table_stats_map)
 	Portal                    portal;
 	char                     *sql = "select tableid, size, segid from diskquota.table_size";
 
-	SPI_connect_my(&connected, &pushed_active_snap, &commit, &transaction);
+	SPI_connect_my(&state);
 
 	if ((plan = SPI_prepare(sql, 0, NULL)) == NULL)
 		ereport(ERROR, (errmsg("[diskquota] SPI_prepare(\"%s\") failed", sql)));
@@ -1031,7 +1031,7 @@ load_table_size(HTAB *local_table_stats_map)
 	SPI_freetuptable(SPI_tuptable);
 	SPI_cursor_close(portal);
 	SPI_freeplan(plan);
-	SPI_finish_my(connected, pushed_active_snap, commit, transaction);
+	SPI_finish_my(&state);
 }
 
 /*

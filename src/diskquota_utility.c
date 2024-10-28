@@ -1235,10 +1235,10 @@ set_per_segment_quota(PG_FUNCTION_ARGS)
 int
 worker_spi_get_extension_version(int *major, int *minor)
 {
-	bool connected, pushed_active_snap, commit, transaction;
-	int  ret;
+	SPI_state state;
+	int       ret;
 
-	SPI_connect_my(&connected, &pushed_active_snap, &commit, &transaction);
+	SPI_connect_my(&state);
 
 	ret = SPI_execute("select extversion from pg_extension where extname = 'diskquota'", true, 0);
 
@@ -1283,7 +1283,7 @@ worker_spi_get_extension_version(int *major, int *minor)
 	ret = 0;
 
 out:
-	SPI_finish_my(connected, pushed_active_snap, commit, transaction);
+	SPI_finish_my(&state);
 
 	return ret;
 }
@@ -1300,11 +1300,11 @@ out:
 List *
 get_rel_oid_list(bool is_init)
 {
-	bool  connected, pushed_active_snap, commit, transaction;
-	List *oidlist = NIL;
-	int   ret;
+	SPI_state state;
+	List     *oidlist = NIL;
+	int       ret;
 
-	SPI_connect_my(&connected, &pushed_active_snap, &commit, &transaction);
+	SPI_connect_my(&state);
 
 #define SELECT_FROM_PG_CATALOG_PG_CLASS "select oid from pg_catalog.pg_class where oid >= $1 and relkind in ('r', 'm')"
 
@@ -1352,7 +1352,7 @@ get_rel_oid_list(bool is_init)
 			MemoryContextSwitchTo(oldcontext);
 		}
 	}
-	SPI_finish_my(connected, pushed_active_snap, commit, transaction);
+	SPI_finish_my(&state);
 	return oidlist;
 }
 
@@ -1715,40 +1715,41 @@ check_hash_fullness(HTAB *hashp, int max_size, const char *warning_message, Time
 }
 
 void
-SPI_connect_my(bool *connected, bool *pushed_active_snap, bool *commit, bool *transaction)
+SPI_connect_my(SPI_state *state)
 {
 	int rc;
 
-	*connected          = false;
-	*pushed_active_snap = false;
-	*transaction        = false;
-	*commit             = true;
+	state->is_connected              = false;
+	state->is_active_snapshot_pushed = false;
+	state->is_under_transaction      = false;
+	state->do_commit                 = true;
+
 	SetCurrentStatementStartTimestamp();
 	if (!IsTransactionState())
 	{
 		StartTransactionCommand();
-		*transaction = true;
+		state->is_under_transaction = true;
 	}
 	if ((rc = SPI_connect()) != SPI_OK_CONNECT)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_connect failed"),
 		                errdetail("%s", SPI_result_code_string(rc))));
-	*connected = true;
+	state->is_connected = true;
 	PushActiveSnapshot(GetTransactionSnapshot());
-	*pushed_active_snap = true;
+	state->is_active_snapshot_pushed = true;
 }
 
 void
-SPI_finish_my(bool connected, bool pushed_active_snap, bool commit, bool transaction)
+SPI_finish_my(const SPI_state *state)
 {
 	int rc;
 
-	if (pushed_active_snap) PopActiveSnapshot();
-	if (connected && (rc = SPI_finish()) != SPI_OK_FINISH)
+	if (state->is_active_snapshot_pushed) PopActiveSnapshot();
+	if (state->is_connected && (rc = SPI_finish()) != SPI_OK_FINISH)
 		ereport(WARNING, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_finish failed"),
 		                  errdetail("%s", SPI_result_code_string(rc))));
-	if (transaction)
+	if (state->is_under_transaction)
 	{
-		if (commit)
+		if (state->do_commit)
 			CommitTransactionCommand();
 		else
 			AbortCurrentTransaction();
