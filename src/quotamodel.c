@@ -678,8 +678,6 @@ check_diskquota_state_is_ready()
 	bool pushed_active_snap = false;
 	bool ret                = true;
 
-	StartTransactionCommand();
-
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
 	 * and current SPI execute will fail. diskquota worker process should
@@ -687,15 +685,8 @@ check_diskquota_state_is_ready()
 	 */
 	PG_TRY();
 	{
-		if (SPI_OK_CONNECT != SPI_connect())
-		{
-			ereport(ERROR,
-			        (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] unable to connect to execute SPI query")));
-		}
-		connected = true;
-		PushActiveSnapshot(GetTransactionSnapshot());
-		pushed_active_snap = true;
-		is_ready           = do_check_diskquota_state_is_ready();
+		SPI_connect_my(&connected, &pushed_active_snap, &ret);
+		is_ready = do_check_diskquota_state_is_ready();
 	}
 	PG_CATCH();
 	{
@@ -708,12 +699,7 @@ check_diskquota_state_is_ready()
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	if (connected) SPI_finish();
-	if (pushed_active_snap) PopActiveSnapshot();
-	if (ret)
-		CommitTransactionCommand();
-	else
-		AbortCurrentTransaction();
+	SPI_finish_my(connected, pushed_active_snap, ret);
 	return is_ready;
 }
 
@@ -805,8 +791,6 @@ refresh_disk_quota_usage(bool is_init)
 	bool  ret                         = true;
 	HTAB *local_active_table_stat_map = NULL;
 
-	StartTransactionCommand();
-
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
 	 * and current SPI execute will fail. diskquota worker process should
@@ -814,14 +798,7 @@ refresh_disk_quota_usage(bool is_init)
 	 */
 	PG_TRY();
 	{
-		if (SPI_OK_CONNECT != SPI_connect())
-		{
-			ereport(ERROR,
-			        (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] unable to connect to execute SPI query")));
-		}
-		connected = true;
-		PushActiveSnapshot(GetTransactionSnapshot());
-		pushed_active_snap = true;
+		SPI_connect_my(&connected, &pushed_active_snap, &ret);
 		/*
 		 * initialization stage all the tables are active. later loop, only the
 		 * tables whose disk size changed will be treated as active
@@ -861,13 +838,7 @@ refresh_disk_quota_usage(bool is_init)
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	if (connected) SPI_finish();
-	if (pushed_active_snap) PopActiveSnapshot();
-	if (ret)
-		CommitTransactionCommand();
-	else
-		AbortCurrentTransaction();
-
+	SPI_finish_my(connected, pushed_active_snap, ret);
 	return;
 }
 
@@ -1229,7 +1200,7 @@ flush_to_table_size(void)
 				}
 			}
 			/* update the table size by delete+insert in table table_size */
-			else if (TableSizeEntryGetFlushFlag(tsentry, i))
+			else if (TableSizeEntryGetFlushFlag(tsentry, i)) //
 			{
 				appendStringInfo(&delete_statement, "%s(%u,%d)", (delete_entries_num == 0) ? " " : ", ",
 				                 tsentry->key.reloid, i);
@@ -1417,8 +1388,6 @@ load_quotas(void)
 	bool pushed_active_snap = false;
 	bool ret                = true;
 
-	StartTransactionCommand();
-
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
 	 * and current SPI execute will fail. diskquota worker process should
@@ -1426,15 +1395,7 @@ load_quotas(void)
 	 */
 	PG_TRY();
 	{
-		int ret_code = SPI_connect();
-		if (ret_code != SPI_OK_CONNECT)
-		{
-			ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-			                errmsg("[diskquota] unable to connect to execute SPI query, return code: %d", ret_code)));
-		}
-		connected = true;
-		PushActiveSnapshot(GetTransactionSnapshot());
-		pushed_active_snap = true;
+		SPI_connect_my(&connected, &pushed_active_snap, &ret);
 		do_load_quotas();
 	}
 	PG_CATCH();
@@ -1448,13 +1409,7 @@ load_quotas(void)
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	if (connected) SPI_finish();
-	if (pushed_active_snap) PopActiveSnapshot();
-	if (ret)
-		CommitTransactionCommand();
-	else
-		AbortCurrentTransaction();
-
+	SPI_finish_my(connected, pushed_active_snap, ret);
 	return ret;
 }
 

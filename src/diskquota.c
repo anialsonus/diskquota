@@ -981,8 +981,6 @@ create_monitor_db_table(void)
 	      ".diskquota_active_table_type AS '$libdir/" DISKQUOTA_BINARY_NAME
 	      ".so', 'diskquota_fetch_table_stat' LANGUAGE C VOLATILE;";
 
-	StartTransactionCommand();
-
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
 	 * and current SPI execute will fail. diskquota launcher process should
@@ -990,21 +988,12 @@ create_monitor_db_table(void)
 	 */
 	PG_TRY();
 	{
-		int ret_code = SPI_connect();
-		if (ret_code != SPI_OK_CONNECT)
-		{
-			ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-			                errmsg("[diskquota launcher] unable to connect to execute internal query. return code: %d.",
-			                       ret_code)));
-		}
-		connected = true;
-		PushActiveSnapshot(GetTransactionSnapshot());
-		pushed_active_snap = true;
+		SPI_connect_my(&connected, &pushed_active_snap, &ret);
 
 		/* debug_query_string need to be set for SPI_execute utility functions. */
 		debug_query_string = sql;
 
-		ret_code = SPI_execute(sql, false, 0);
+		int ret_code = SPI_execute(sql, false, 0);
 		if (ret_code != SPI_OK_UTILITY)
 		{
 			int saved_errno = errno;
@@ -1024,12 +1013,7 @@ create_monitor_db_table(void)
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	if (connected) SPI_finish();
-	if (pushed_active_snap) PopActiveSnapshot();
-	if (ret)
-		CommitTransactionCommand();
-	else
-		AbortCurrentTransaction();
+	SPI_finish_my(connected, pushed_active_snap, ret);
 
 	debug_query_string = NULL;
 }
@@ -1042,7 +1026,10 @@ static void
 init_database_list(void)
 {
 	TupleDesc tupdesc;
-	int       num = 0;
+	bool      connected          = false;
+	bool      pushed_active_snap = false;
+	bool      commit             = true;
+	int       num                = 0;
 	int       ret;
 	int       i;
 
@@ -1051,16 +1038,8 @@ init_database_list(void)
 	 * startup worker for diskquota launcher. If error happens, we just let
 	 * launcher exits.
 	 */
-	StartTransactionCommand();
-	PushActiveSnapshot(GetTransactionSnapshot());
+	SPI_connect_my(&connected, &pushed_active_snap, &commit);
 
-	ret = SPI_connect();
-	if (ret != SPI_OK_CONNECT)
-	{
-		int saved_errno = errno;
-		ereport(ERROR, (errmsg("[diskquota launcher] SPI connect error, reason: %s, return code: %d.",
-		                       strerror(saved_errno), ret)));
-	}
 	ret = SPI_execute("select dbid from diskquota_namespace.database_list;", true, 0);
 	if (ret != SPI_OK_SELECT)
 	{
@@ -1129,9 +1108,7 @@ init_database_list(void)
 			update_monitor_db_mpp(dbEntry->dbid, ADD_DB_TO_MONITOR, LAUNCHER_SCHEMA);
 		}
 	}
-	SPI_finish();
-	PopActiveSnapshot();
-	CommitTransactionCommand();
+	SPI_finish_my(connected, pushed_active_snap, commit);
 	/* TODO: clean invalid database */
 	if (num_db > diskquota_max_workers) DiskquotaLauncherShmem->isDynamicWorker = true;
 }
@@ -1185,8 +1162,6 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 	bool pushed_active_snap = false;
 	bool ret                = true;
 
-	StartTransactionCommand();
-
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
 	 * and current SPI execute will fail. diskquota launcher process should
@@ -1194,15 +1169,7 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 	 */
 	PG_TRY();
 	{
-		int ret_code = SPI_connect();
-		if (ret_code != SPI_OK_CONNECT)
-		{
-			ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-			                errmsg("unable to connect to execute internal query. return code: %d.", ret_code)));
-		}
-		connected = true;
-		PushActiveSnapshot(GetTransactionSnapshot());
-		pushed_active_snap = true;
+		SPI_connect_my(&connected, &pushed_active_snap, &ret);
 
 		switch (local_extension_ddl_message.cmd)
 		{
@@ -1235,28 +1202,16 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 	}
 	PG_END_TRY();
 
-	if (connected) SPI_finish();
-	if (pushed_active_snap) PopActiveSnapshot();
-	if (ret)
-		CommitTransactionCommand();
-	else
-		AbortCurrentTransaction();
+	SPI_finish_my(connected, pushed_active_snap, ret);
+
 	/* update something in memory after transaction committed */
 	if (ret)
 	{
 		PG_TRY();
 		{
 			/* update_monitor_db_mpp runs sql to distribute dbid to segments */
-			StartTransactionCommand();
-			PushActiveSnapshot(GetTransactionSnapshot());
-			pushed_active_snap = true;
-			Oid dbid           = local_extension_ddl_message.dbid;
-			int ret_code       = SPI_connect();
-			if (ret_code != SPI_OK_CONNECT)
-			{
-				ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-				                errmsg("unable to connect to execute internal query. return code: %d.", ret_code)));
-			}
+			Oid dbid = local_extension_ddl_message.dbid;
+			SPI_connect_my(&connected, &pushed_active_snap, &ret);
 			switch (local_extension_ddl_message.cmd)
 			{
 				case CMD_CREATE_EXTENSION:
@@ -1278,9 +1233,6 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 					                     local_extension_ddl_message.cmd)));
 					break;
 			}
-			SPI_finish();
-			if (pushed_active_snap) PopActiveSnapshot();
-			CommitTransactionCommand();
 		}
 		PG_CATCH();
 		{
@@ -1291,6 +1243,8 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 			RESUME_INTERRUPTS();
 		}
 		PG_END_TRY();
+
+		SPI_finish_my(connected, pushed_active_snap, ret);
 	}
 	DisconnectAndDestroyAllGangs(false);
 }

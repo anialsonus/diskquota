@@ -1235,10 +1235,12 @@ set_per_segment_quota(PG_FUNCTION_ARGS)
 int
 worker_spi_get_extension_version(int *major, int *minor)
 {
-	StartTransactionCommand();
-	int ret = SPI_connect();
-	Assert(ret = SPI_OK_CONNECT);
-	PushActiveSnapshot(GetTransactionSnapshot());
+	bool connected          = false;
+	bool pushed_active_snap = false;
+	bool commit             = true;
+	int  ret;
+
+	SPI_connect_my(&connected, &pushed_active_snap, &commit);
 
 	ret = SPI_execute("select extversion from pg_extension where extname = 'diskquota'", true, 0);
 
@@ -1283,9 +1285,7 @@ worker_spi_get_extension_version(int *major, int *minor)
 	ret = 0;
 
 out:
-	SPI_finish();
-	PopActiveSnapshot();
-	CommitTransactionCommand();
+	SPI_finish_my(connected, pushed_active_snap, commit);
 
 	return ret;
 }
@@ -1708,4 +1708,33 @@ check_hash_fullness(HTAB *hashp, int max_size, const char *warning_message, Time
 	}
 
 	return HASH_FIND;
+}
+
+void
+SPI_connect_my(bool *connected, bool *pushed_active_snap, bool *ret)
+{
+	int rc;
+	SetCurrentStatementStartTimestamp();
+	StartTransactionCommand();
+	if ((rc = SPI_connect()) != SPI_OK_CONNECT)
+		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_connect failed"),
+		                errdetail("%s", SPI_result_code_string(rc))));
+	*connected = true;
+	PushActiveSnapshot(GetTransactionSnapshot());
+	*pushed_active_snap = true;
+	*ret                = true;
+}
+
+void
+SPI_finish_my(bool connected, bool pushed_active_snap, bool ret)
+{
+	int rc;
+	if (pushed_active_snap) PopActiveSnapshot();
+	if (connected && (rc = SPI_finish()) != SPI_OK_FINISH)
+		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_finish failed"),
+		                errdetail("%s", SPI_result_code_string(rc))));
+	if (ret)
+		CommitTransactionCommand();
+	else
+		AbortCurrentTransaction();
 }
