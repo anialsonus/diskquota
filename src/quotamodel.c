@@ -784,8 +784,8 @@ refresh_disk_quota_model(bool is_init)
 static void
 refresh_disk_quota_usage(bool is_init)
 {
-	bool  pushed_active_snap          = false;
-	bool  ret                         = true;
+	bool pushed_active_snap = false;
+	bool ret                = true;
 
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
@@ -877,7 +877,7 @@ calculate_table_disk_usage(StringInfo active_oids, bool is_init)
 	TableSizeEntry   *tsentry = NULL;
 	HASH_SEQ_STATUS   iter;
 	TableSizeEntryKey key;
-	ArrayBuildState          *tableids = NULL, *segids = NULL;
+	ArrayBuildState  *tableids = NULL, *segids = NULL;
 	SPIPlanPtr        plan;
 	Portal            portal;
 	StringInfoData    sql;
