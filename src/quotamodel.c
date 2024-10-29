@@ -843,22 +843,6 @@ refresh_disk_quota_usage(bool is_init)
 	return;
 }
 
-static Datum
-SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null, Oid typeid)
-{
-	bool  isnull;
-	Datum datum;
-	int   fnumber = SPI_fnumber(tupdesc, fname);
-	if (SPI_gettypeid(tupdesc, fnumber) != typeid)
-		ereport(ERROR, (errcode(ERRCODE_MOST_SPECIFIC_TYPE_MISMATCH),
-		                errmsg("type of column \"%s\" must be \"%i\"", fname, typeid)));
-	datum = SPI_getbinval(tuple, tupdesc, fnumber, &isnull);
-	if (allow_null) return datum;
-	if (isnull)
-		ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED), errmsg("column \"%s\" must not be null", fname)));
-	return datum;
-}
-
 /*
  *  Incremental way to update the disk quota of every database objects
  *  Recalculate the table's disk usage when it's a new table or active table.
@@ -949,13 +933,14 @@ calculate_table_disk_usage(StringInfo active_oids, bool is_init)
 		SPI_cursor_fetch(portal, true, 1000);
 		for (uint64 row = 0; row < SPI_processed; row++)
 		{
-			HeapTuple  val           = SPI_tuptable->vals[row];
-			TupleDesc  tupdesc       = SPI_tuptable->tupdesc;
-			Oid        relOid        = DatumGetObjectId(SPI_getbinval_my(val, tupdesc, "oid", false, OIDOID));
-			Oid        relowner      = DatumGetObjectId(SPI_getbinval_my(val, tupdesc, "relowner", true, OIDOID));
-			Oid        relnamespace  = DatumGetObjectId(SPI_getbinval_my(val, tupdesc, "relnamespace", true, OIDOID));
-			Oid        reltablespace = DatumGetObjectId(SPI_getbinval_my(val, tupdesc, "reltablespace", true, OIDOID));
-			ArrayType *array         = DatumGetArrayTypePmy(SPI_getbinval_my(val, tupdesc, "size", true, INT8ARRAYOID));
+			HeapTuple val      = SPI_tuptable->vals[row];
+			TupleDesc tupdesc  = SPI_tuptable->tupdesc;
+			Oid       relOid   = DatumGetObjectId(SPI_getbinval_wrapper(val, tupdesc, "oid", false, OIDOID));
+			Oid       relowner = DatumGetObjectId(SPI_getbinval_wrapper(val, tupdesc, "relowner", true, OIDOID));
+			Oid relnamespace   = DatumGetObjectId(SPI_getbinval_wrapper(val, tupdesc, "relnamespace", true, OIDOID));
+			Oid reltablespace  = DatumGetObjectId(SPI_getbinval_wrapper(val, tupdesc, "reltablespace", true, OIDOID));
+			ArrayType *array =
+			        DatumGetArrayTypePwrapper(SPI_getbinval_wrapper(val, tupdesc, "size", true, INT8ARRAYOID));
 
 			if (array)
 			{

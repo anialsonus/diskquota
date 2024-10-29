@@ -17,6 +17,7 @@
 #include "postgres.h"
 #include "port/atomics.h"
 
+#include "access/htup.h"
 #include "catalog/pg_class.h"
 #include "lib/ilist.h"
 #include "lib/stringinfo.h"
@@ -75,7 +76,7 @@ extern int diskquota_worker_timeout;
 #define DiskquotaGetRelstorage(classForm) (0)
 #endif /* GP_VERSION_NUM */
 
-#define DatumGetArrayTypePmy(X) ((X) ? DatumGetArrayTypeP(X) : NULL)
+#define DatumGetArrayTypePwrapper(X) ((X) ? DatumGetArrayTypeP(X) : NULL)
 
 typedef struct
 {
@@ -330,4 +331,5 @@ extern HASHACTION check_hash_fullness(HTAB *hashp, int max_size, const char *war
                                       TimestampTz *last_overflow_report);
 void              SPI_connect_wrapper(SPI_state *state);
 void              SPI_finish_wrapper(const SPI_state *state);
+Datum SPI_getbinval_wrapper(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null, Oid typeid);
 #endif

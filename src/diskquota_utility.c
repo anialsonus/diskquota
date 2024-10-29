@@ -1691,3 +1691,19 @@ SPI_finish_wrapper(const SPI_state *state)
 			AbortCurrentTransaction();
 	}
 }
+
+Datum
+SPI_getbinval_wrapper(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null, Oid typeid)
+{
+	bool  isnull;
+	Datum datum;
+	int   fnumber = SPI_fnumber(tupdesc, fname);
+	if (SPI_gettypeid(tupdesc, fnumber) != typeid)
+		ereport(ERROR, (errcode(ERRCODE_MOST_SPECIFIC_TYPE_MISMATCH),
+		                errmsg("type of column \"%s\" must be \"%i\"", fname, typeid)));
+	datum = SPI_getbinval(tuple, tupdesc, fnumber, &isnull);
+	if (allow_null) return datum;
+	if (isnull)
+		ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED), errmsg("column \"%s\" must not be null", fname)));
+	return datum;
+}
