@@ -1343,10 +1343,10 @@ flush_local_reject_map(void)
 static void
 dispatch_rejectmap(char *active_oids)
 {
+	SPI_state             state;
 	HASH_SEQ_STATUS       hash_seq;
 	GlobalRejectMapEntry *rejectmap_entry;
 	int                   num_entries, count = 0;
-	CdbPgResults          cdb_pgresults = {NULL, 0};
 	StringInfoData        rows;
 	StringInfoData        sql;
 
@@ -1369,13 +1369,18 @@ dispatch_rejectmap(char *active_oids)
 	appendStringInfo(&sql,
 	                 "select diskquota.refresh_rejectmap("
 	                 "ARRAY[%s]::diskquota.rejectmap_entry[], "
-	                 "ARRAY[%s]::oid[])",
+	                 "ARRAY[%s]::oid[]) from gp_dist_random('gp_id')",
 	                 rows.data, active_oids);
-	CdbDispatchCommand(sql.data, DF_NONE, &cdb_pgresults);
+
+	SPI_connect_wrapper(&state);
+	int ret = SPI_execute(sql.data, false, 0);
+	if (ret != SPI_OK_SELECT)
+		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
+		                errmsg("[diskquota] diskquota.refresh_rejectmap SPI_execute failed: error code %d", ret)));
+	SPI_finish_wrapper(&state);
 
 	pfree(rows.data);
 	pfree(sql.data);
-	cdbdisp_clearCdbPgResults(&cdb_pgresults);
 }
 
 /*
