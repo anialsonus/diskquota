@@ -684,6 +684,7 @@ check_diskquota_state_is_ready()
 	PG_TRY();
 	{
 		SPI_connect_wrapper(&state);
+		SPI_connect_wrapper(&state);
 		is_ready = do_check_diskquota_state_is_ready();
 	}
 	PG_CATCH();
