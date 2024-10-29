@@ -327,6 +327,6 @@ extern HTAB *DiskquotaShmemInitHash(const char *name, long init_size, long max_s
 extern void  refresh_monitored_dbid_cache(void);
 extern HASHACTION check_hash_fullness(HTAB *hashp, int max_size, const char *warning_message,
                                       TimestampTz *last_overflow_report);
-void              SPI_connect_my(SPI_state *state);
-void              SPI_finish_my(const SPI_state *state);
+void              SPI_connect_wrapper(SPI_state *state);
+void              SPI_finish_wrapper(const SPI_state *state);
 #endif

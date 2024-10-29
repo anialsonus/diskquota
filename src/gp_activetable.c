@@ -955,7 +955,7 @@ load_table_size(HTAB *local_table_stats_map)
 	Portal                    portal;
 	char                     *sql = "select tableid, size, segid from diskquota.table_size";
 
-	SPI_connect_my(&state);
+	SPI_connect_wrapper(&state);
 
 	if ((plan = SPI_prepare(sql, 0, NULL)) == NULL)
 		ereport(ERROR, (errmsg("[diskquota] SPI_prepare(\"%s\") failed", sql)));
@@ -1031,7 +1031,7 @@ load_table_size(HTAB *local_table_stats_map)
 	SPI_freetuptable(SPI_tuptable);
 	SPI_cursor_close(portal);
 	SPI_freeplan(plan);
-	SPI_finish_my(&state);
+	SPI_finish_wrapper(&state);
 }
 
 /*

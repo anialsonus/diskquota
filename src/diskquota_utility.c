@@ -1239,7 +1239,7 @@ worker_spi_get_extension_version(int *major, int *minor)
 	SPI_state state;
 	int       ret;
 
-	SPI_connect_my(&state);
+	SPI_connect_wrapper(&state);
 
 	ret = SPI_execute("select extversion from pg_extension where extname = 'diskquota'", true, 0);
 
@@ -1284,7 +1284,7 @@ worker_spi_get_extension_version(int *major, int *minor)
 	ret = 0;
 
 out:
-	SPI_finish_my(&state);
+	SPI_finish_wrapper(&state);
 
 	return ret;
 }
@@ -1305,7 +1305,7 @@ get_rel_oid_list(bool is_init)
 	List     *oidlist = NIL;
 	int       ret;
 
-	SPI_connect_my(&state);
+	SPI_connect_wrapper(&state);
 
 #define SELECT_FROM_PG_CATALOG_PG_CLASS "select oid from pg_catalog.pg_class where oid >= $1 and relkind in ('r', 'm')"
 
@@ -1353,7 +1353,7 @@ get_rel_oid_list(bool is_init)
 			MemoryContextSwitchTo(oldcontext);
 		}
 	}
-	SPI_finish_my(&state);
+	SPI_finish_wrapper(&state);
 	return oidlist;
 }
 
@@ -1716,7 +1716,7 @@ check_hash_fullness(HTAB *hashp, int max_size, const char *warning_message, Time
 }
 
 void
-SPI_connect_my(SPI_state *state)
+SPI_connect_wrapper(SPI_state *state)
 {
 	int rc;
 
@@ -1743,7 +1743,7 @@ SPI_connect_my(SPI_state *state)
 }
 
 void
-SPI_finish_my(const SPI_state *state)
+SPI_finish_wrapper(const SPI_state *state)
 {
 	int rc;
 
