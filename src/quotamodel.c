@@ -683,7 +683,7 @@ check_diskquota_state_is_ready()
 	 */
 	PG_TRY();
 	{
-		SPI_connect_my(&state);
+		SPI_connect_wrapper(&state);
 		is_ready = do_check_diskquota_state_is_ready();
 	}
 	PG_CATCH();
@@ -697,7 +697,7 @@ check_diskquota_state_is_ready()
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	SPI_finish_my(&state);
+	SPI_finish_wrapper(&state);
 	return is_ready;
 }
 
@@ -1136,12 +1136,12 @@ delete_from_table_size_map(char *str)
 	                 "delete from diskquota.table_size "
 	                 "where (tableid, segid) in ( SELECT * FROM deleted_table );",
 	                 str);
-	SPI_connect_my(&state);
+	SPI_connect_wrapper(&state);
 	ret = SPI_execute(delete_statement.data, false, 0);
 	if (ret != SPI_OK_DELETE)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
-	SPI_finish_my(&state);
+	SPI_finish_wrapper(&state);
 	pfree(delete_statement.data);
 }
 
@@ -1154,12 +1154,12 @@ insert_into_table_size_map(char *str)
 
 	initStringInfo(&insert_statement);
 	appendStringInfo(&insert_statement, "insert into diskquota.table_size values %s;", str);
-	SPI_connect_my(&state);
+	SPI_connect_wrapper(&state);
 	ret = SPI_execute(insert_statement.data, false, 0);
 	if (ret != SPI_OK_INSERT)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] insert_into_table_size_map SPI_execute failed: error code %d", ret)));
-	SPI_finish_my(&state);
+	SPI_finish_wrapper(&state);
 	pfree(insert_statement.data);
 }
 
@@ -1402,7 +1402,7 @@ load_quotas(void)
 	 */
 	PG_TRY();
 	{
-		SPI_connect_my(&state);
+		SPI_connect_wrapper(&state);
 		do_load_quotas();
 	}
 	PG_CATCH();
@@ -1416,7 +1416,7 @@ load_quotas(void)
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	SPI_finish_my(&state);
+	SPI_finish_wrapper(&state);
 	return state.do_commit;
 }
 

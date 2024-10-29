@@ -986,7 +986,7 @@ create_monitor_db_table(void)
 	 */
 	PG_TRY();
 	{
-		SPI_connect_my(&state);
+		SPI_connect_wrapper(&state);
 
 		/* debug_query_string need to be set for SPI_execute utility functions. */
 		debug_query_string = sql;
@@ -1011,7 +1011,7 @@ create_monitor_db_table(void)
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	SPI_finish_my(&state);
+	SPI_finish_wrapper(&state);
 
 	debug_query_string = NULL;
 }
@@ -1034,7 +1034,7 @@ init_database_list(void)
 	 * startup worker for diskquota launcher. If error happens, we just let
 	 * launcher exits.
 	 */
-	SPI_connect_my(&state);
+	SPI_connect_wrapper(&state);
 
 	ret = SPI_execute("select dbid from diskquota_namespace.database_list;", true, 0);
 	if (ret != SPI_OK_SELECT)
@@ -1104,7 +1104,7 @@ init_database_list(void)
 			update_monitor_db_mpp(dbEntry->dbid, ADD_DB_TO_MONITOR, LAUNCHER_SCHEMA);
 		}
 	}
-	SPI_finish_my(&state);
+	SPI_finish_wrapper(&state);
 	/* TODO: clean invalid database */
 	if (num_db > diskquota_max_workers) DiskquotaLauncherShmem->isDynamicWorker = true;
 }
@@ -1163,7 +1163,7 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 	 */
 	PG_TRY();
 	{
-		SPI_connect_my(&state);
+		SPI_connect_wrapper(&state);
 
 		switch (local_extension_ddl_message.cmd)
 		{
@@ -1196,7 +1196,7 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 	}
 	PG_END_TRY();
 
-	SPI_finish_my(&state);
+	SPI_finish_wrapper(&state);
 
 	/* update something in memory after transaction committed */
 	if (state.do_commit)
@@ -1205,7 +1205,7 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 		{
 			/* update_monitor_db_mpp runs sql to distribute dbid to segments */
 			Oid dbid = local_extension_ddl_message.dbid;
-			SPI_connect_my(&state);
+			SPI_connect_wrapper(&state);
 			switch (local_extension_ddl_message.cmd)
 			{
 				case CMD_CREATE_EXTENSION:
@@ -1239,7 +1239,7 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 		}
 		PG_END_TRY();
 
-		SPI_finish_my(&state);
+		SPI_finish_wrapper(&state);
 	}
 	DisconnectAndDestroyAllGangs(false);
 }
