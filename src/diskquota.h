@@ -77,6 +77,14 @@ extern int diskquota_worker_timeout;
 
 #define DatumGetArrayTypePmy(X) ((X) ? DatumGetArrayTypeP(X) : NULL)
 
+typedef struct
+{
+	bool is_connected;
+	bool is_active_snapshot_pushed;
+	bool do_commit;
+	bool is_under_transaction;
+} SPI_state;
+
 typedef enum
 {
 	NAMESPACE_QUOTA = 0,
@@ -320,4 +328,6 @@ extern HTAB *DiskquotaShmemInitHash(const char *name, long init_size, long max_s
 extern void  refresh_monitored_dbid_cache(void);
 extern HASHACTION check_hash_fullness(HTAB *hashp, int max_size, const char *warning_message,
                                       TimestampTz *last_overflow_report);
+void              SPI_connect_wrapper(SPI_state *state);
+void              SPI_finish_wrapper(const SPI_state *state);
 #endif
