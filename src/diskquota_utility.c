@@ -1663,10 +1663,13 @@ SPI_connect_wrapper(SPI_state *state)
 		StartTransactionCommand();
 		state->is_under_transaction = true;
 	}
-	if ((rc = SPI_connect()) != SPI_OK_CONNECT)
-		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_connect failed"),
-		                errdetail("%s", SPI_result_code_string(rc))));
-	state->is_connected = true;
+	if (!SPI_context())
+	{
+		if ((rc = SPI_connect()) != SPI_OK_CONNECT)
+			ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_connect failed"),
+			                errdetail("%s", SPI_result_code_string(rc))));
+		state->is_connected = true;
+	}
 	if (state->is_under_transaction)
 	{
 		PushActiveSnapshot(GetTransactionSnapshot());
