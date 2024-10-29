@@ -1343,34 +1343,18 @@ flush_local_reject_map(void)
 static void
 dispatch_rejectmap(char *active_oids)
 {
-	SPI_state             state;
-	HASH_SEQ_STATUS       hash_seq;
-	GlobalRejectMapEntry *rejectmap_entry;
-	int                   num_entries, count = 0;
-	StringInfoData        rows;
-	StringInfoData        sql;
+	SPI_state      state;
+	StringInfoData sql;
 
-	initStringInfo(&rows);
 	initStringInfo(&sql);
-
-	LWLockAcquire(diskquota_locks.reject_map_lock, LW_SHARED);
-	num_entries = hash_get_num_entries(disk_quota_reject_map);
-	hash_seq_init(&hash_seq, disk_quota_reject_map);
-	while ((rejectmap_entry = hash_seq_search(&hash_seq)) != NULL)
-	{
-		appendStringInfo(&rows, "ROW(%d, %d, %d, %d, %s)", rejectmap_entry->keyitem.targetoid,
-		                 rejectmap_entry->keyitem.databaseoid, rejectmap_entry->keyitem.tablespaceoid,
-		                 rejectmap_entry->keyitem.targettype, rejectmap_entry->segexceeded ? "true" : "false");
-
-		if (++count != num_entries) appendStringInfo(&rows, ",");
-	}
-	LWLockRelease(diskquota_locks.reject_map_lock);
 
 	appendStringInfo(&sql,
 	                 "select diskquota.refresh_rejectmap("
-	                 "ARRAY[%s]::diskquota.rejectmap_entry[], "
+	                 "select array_agg((target_oid, database_oid, tablespace_oid, target_type, "
+	                 "seg_exceeded)::diskquota.rejectmap_entry) "
+	                 "from diskquota.show_rejectmap(), "
 	                 "ARRAY[%s]::oid[]) from gp_dist_random('gp_id')",
-	                 rows.data, active_oids);
+	                 active_oids);
 
 	SPI_connect_wrapper(&state);
 	int ret = SPI_execute(sql.data, false, 0);
@@ -1379,7 +1363,6 @@ dispatch_rejectmap(char *active_oids)
 		                errmsg("[diskquota] diskquota.refresh_rejectmap SPI_execute failed: error code %d", ret)));
 	SPI_finish_wrapper(&state);
 
-	pfree(rows.data);
 	pfree(sql.data);
 }
 
