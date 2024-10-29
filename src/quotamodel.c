@@ -856,6 +856,7 @@ refresh_disk_quota_usage(bool is_init)
 static void
 calculate_table_disk_usage(StringInfo active_oids, bool is_init)
 {
+	SPI_state         state;
 	bool              table_size_map_found;
 	int64             updated_total_size;
 	TableSizeEntry   *tsentry = NULL;
@@ -921,6 +922,7 @@ calculate_table_disk_usage(StringInfo active_oids, bool is_init)
 	 * calculate the file size for active table and update namespace_size_map
 	 * and role_size_map
 	 */
+	SPI_connect_wrapper(&state);
 
 	if ((plan = SPI_prepare(sql.data, 1, (Oid[]){OIDOID})) == NULL)
 		ereport(ERROR, (errmsg("[diskquota] SPI_prepare(\"%s\") failed", sql.data)));
@@ -1101,6 +1103,7 @@ calculate_table_disk_usage(StringInfo active_oids, bool is_init)
 
 	SPI_cursor_close(portal);
 	SPI_freeplan(plan);
+	SPI_finish_wrapper(&state);
 	pfree(tablesize);
 
 	if (tableids) delete_from_table_size_map(tableids, segids);
