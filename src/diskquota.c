@@ -958,7 +958,7 @@ disk_quota_launcher_main(Datum main_arg)
 static void
 create_monitor_db_table(void)
 {
-	int         state;
+	int         state = 0;
 	const char *sql;
 
 	/*
@@ -1152,7 +1152,7 @@ process_extension_ddl_message()
 static void
 do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_extension_ddl_message)
 {
-	int state;
+	int state = 0;
 	int old_num_db = num_db;
 
 	/*
