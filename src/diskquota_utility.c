@@ -1236,10 +1236,8 @@ set_per_segment_quota(PG_FUNCTION_ARGS)
 int
 worker_spi_get_extension_version(int *major, int *minor)
 {
-	int ret;
 	int state = SPI_connect_wrapper();
-
-	ret = SPI_execute("select extversion from pg_extension where extname = 'diskquota'", true, 0);
+	int ret   = SPI_execute("select extversion from pg_extension where extname = 'diskquota'", true, 0);
 
 	if (SPI_processed == 0)
 	{
