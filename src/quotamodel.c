@@ -673,8 +673,8 @@ vacuum_disk_quota_model(uint32 id)
 bool
 check_diskquota_state_is_ready()
 {
-	SPI_state state;
-	bool      is_ready = false;
+	int  state;
+	bool is_ready = false;
 
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
@@ -683,7 +683,7 @@ check_diskquota_state_is_ready()
 	 */
 	PG_TRY();
 	{
-		SPI_connect_wrapper(&state);
+		state    = SPI_connect_wrapper();
 		is_ready = do_check_diskquota_state_is_ready();
 	}
 	PG_CATCH();
@@ -692,12 +692,12 @@ check_diskquota_state_is_ready()
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
-		state.do_commit = false;
+		state |= is_abort;
 		/* Now we can allow interrupts again */
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	SPI_finish_wrapper(&state);
+	SPI_finish_wrapper(state);
 	return is_ready;
 }
 
@@ -1126,7 +1126,7 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 static void
 delete_from_table_size_map(char *str)
 {
-	SPI_state      state;
+	int            state;
 	StringInfoData delete_statement;
 	int            ret;
 
@@ -1136,30 +1136,30 @@ delete_from_table_size_map(char *str)
 	                 "delete from diskquota.table_size "
 	                 "where (tableid, segid) in ( SELECT * FROM deleted_table );",
 	                 str);
-	SPI_connect_wrapper(&state);
-	ret = SPI_execute(delete_statement.data, false, 0);
+	state = SPI_connect_wrapper();
+	ret   = SPI_execute(delete_statement.data, false, 0);
 	if (ret != SPI_OK_DELETE)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
-	SPI_finish_wrapper(&state);
+	SPI_finish_wrapper(state);
 	pfree(delete_statement.data);
 }
 
 static void
 insert_into_table_size_map(char *str)
 {
-	SPI_state      state;
+	int            state;
 	StringInfoData insert_statement;
 	int            ret;
 
 	initStringInfo(&insert_statement);
 	appendStringInfo(&insert_statement, "insert into diskquota.table_size values %s;", str);
-	SPI_connect_wrapper(&state);
-	ret = SPI_execute(insert_statement.data, false, 0);
+	state = SPI_connect_wrapper();
+	ret   = SPI_execute(insert_statement.data, false, 0);
 	if (ret != SPI_OK_INSERT)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] insert_into_table_size_map SPI_execute failed: error code %d", ret)));
-	SPI_finish_wrapper(&state);
+	SPI_finish_wrapper(state);
 	pfree(insert_statement.data);
 }
 
@@ -1393,7 +1393,7 @@ truncateStringInfo(StringInfo str, int nchars)
 static bool
 load_quotas(void)
 {
-	SPI_state state;
+	int state;
 
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
@@ -1402,7 +1402,7 @@ load_quotas(void)
 	 */
 	PG_TRY();
 	{
-		SPI_connect_wrapper(&state);
+		state = SPI_connect_wrapper();
 		do_load_quotas();
 	}
 	PG_CATCH();
@@ -1411,13 +1411,13 @@ load_quotas(void)
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
-		state.do_commit = false;
+		state |= is_abort;
 		/* Now we can allow interrupts again */
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	SPI_finish_wrapper(&state);
-	return state.do_commit;
+	SPI_finish_wrapper(state);
+	return !(state & is_abort);
 }
 
 /*
