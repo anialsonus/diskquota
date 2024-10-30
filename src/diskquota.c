@@ -1152,7 +1152,7 @@ process_extension_ddl_message()
 static void
 do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_extension_ddl_message)
 {
-	int state = 0;
+	int state      = 0;
 	int old_num_db = num_db;
 
 	/*
