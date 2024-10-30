@@ -749,7 +749,9 @@ do_check_diskquota_state_is_ready(void)
 	bool      isnull;
 
 	dat           = SPI_getbinval(tup, tupdesc, 1, &isnull);
-	bool is_ready = (isnull ? DISKQUOTA_UNKNOWN_STATE : DatumGetInt32(dat)) == DISKQUOTA_READY_STATE;
+	state         = isnull ? DISKQUOTA_UNKNOWN_STATE : DatumGetInt32(dat);
+	bool is_ready = state == DISKQUOTA_READY_STATE;
+
 	SPI_finish_wrapper(connected);
 
 	if (!is_ready && !diskquota_is_readiness_logged())
