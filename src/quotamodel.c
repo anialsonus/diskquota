@@ -671,9 +671,13 @@ vacuum_disk_quota_model(uint32 id)
  * Check whether the diskquota state is ready
  */
 bool
-check_diskquota_state_is_ready()
+check_diskquota_state_is_ready(void)
 {
-	bool is_ready = false;
+	bool is_ready           = false;
+	bool pushed_active_snap = false;
+	bool ret                = true;
+
+	StartTransactionCommand();
 
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
@@ -682,7 +686,9 @@ check_diskquota_state_is_ready()
 	 */
 	PG_TRY();
 	{
-		is_ready = do_check_diskquota_state_is_ready();
+		PushActiveSnapshot(GetTransactionSnapshot());
+		pushed_active_snap = true;
+		is_ready           = do_check_diskquota_state_is_ready();
 	}
 	PG_CATCH();
 	{
@@ -690,10 +696,16 @@ check_diskquota_state_is_ready()
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
+		ret = false;
 		/* Now we can allow interrupts again */
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
+	if (pushed_active_snap) PopActiveSnapshot();
+	if (ret)
+		CommitTransactionCommand();
+	else
+		AbortCurrentTransaction();
 	return is_ready;
 }
 
@@ -785,6 +797,8 @@ refresh_disk_quota_usage(bool is_init)
 	bool  ret                         = true;
 	HTAB *local_active_table_stat_map = NULL;
 
+	StartTransactionCommand();
+
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
 	 * and current SPI execute will fail. diskquota worker process should
@@ -792,7 +806,6 @@ refresh_disk_quota_usage(bool is_init)
 	 */
 	PG_TRY();
 	{
-		StartTransactionCommand();
 		PushActiveSnapshot(GetTransactionSnapshot());
 		pushed_active_snap = true;
 		/*
@@ -1388,7 +1401,11 @@ truncateStringInfo(StringInfo str, int nchars)
 static bool
 load_quotas(void)
 {
-	bool load = false;
+	bool pushed_active_snap = false;
+	bool ret                = true;
+
+	StartTransactionCommand();
+
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
 	 * and current SPI execute will fail. diskquota worker process should
@@ -1396,8 +1413,9 @@ load_quotas(void)
 	 */
 	PG_TRY();
 	{
+		PushActiveSnapshot(GetTransactionSnapshot());
+		pushed_active_snap = true;
 		do_load_quotas();
-		load = true;
 	}
 	PG_CATCH();
 	{
@@ -1405,11 +1423,18 @@ load_quotas(void)
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
+		ret = false;
 		/* Now we can allow interrupts again */
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	return load;
+	if (pushed_active_snap) PopActiveSnapshot();
+	if (ret)
+		CommitTransactionCommand();
+	else
+		AbortCurrentTransaction();
+
+	return ret;
 }
 
 /*

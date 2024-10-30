@@ -1219,9 +1219,11 @@ set_per_segment_quota(PG_FUNCTION_ARGS)
 int
 worker_spi_get_extension_version(int *major, int *minor)
 {
+	StartTransactionCommand();
 	int state = 0;
 
 	SPI_connect_wrapper(&state);
+	PushActiveSnapshot(GetTransactionSnapshot());
 
 	int ret = SPI_execute("select extversion from pg_extension where extname = 'diskquota'", true, 0);
 
@@ -1267,6 +1269,8 @@ worker_spi_get_extension_version(int *major, int *minor)
 
 out:
 	SPI_finish_wrapper(state);
+	PopActiveSnapshot();
+	CommitTransactionCommand();
 
 	return ret;
 }

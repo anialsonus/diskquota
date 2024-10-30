@@ -959,9 +959,12 @@ disk_quota_launcher_main(Datum main_arg)
 static void
 create_monitor_db_table(void)
 {
-	int         state = 0;
 	const char *sql;
+	int         state              = 0;
+	bool        pushed_active_snap = false;
+	bool        ret                = true;
 
+	StartTransactionCommand();
 	/*
 	 * Create function diskquota.diskquota_fetch_table_stat in launcher
 	 * We need this function to distribute dbid to segments when creating
@@ -988,6 +991,8 @@ create_monitor_db_table(void)
 	PG_TRY();
 	{
 		SPI_connect_wrapper(&state);
+		PushActiveSnapshot(GetTransactionSnapshot());
+		pushed_active_snap = true;
 
 		/* debug_query_string need to be set for SPI_execute utility functions. */
 		debug_query_string = sql;
@@ -1006,13 +1011,18 @@ create_monitor_db_table(void)
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
-		state |= IS_ABORT;
+		ret                = false;
 		debug_query_string = NULL;
 		/* Now we can allow interrupts again */
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
 	SPI_finish_wrapper(state);
+	if (pushed_active_snap) PopActiveSnapshot();
+	if (ret)
+		CommitTransactionCommand();
+	else
+		AbortCurrentTransaction();
 
 	debug_query_string = NULL;
 }
@@ -1035,6 +1045,8 @@ init_database_list(void)
 	 * startup worker for diskquota launcher. If error happens, we just let
 	 * launcher exits.
 	 */
+	StartTransactionCommand();
+	PushActiveSnapshot(GetTransactionSnapshot());
 	SPI_connect_wrapper(&state);
 
 	ret = SPI_execute("select dbid from diskquota_namespace.database_list;", true, 0);
@@ -1106,6 +1118,8 @@ init_database_list(void)
 			update_monitor_db_mpp(dbEntry->dbid, ADD_DB_TO_MONITOR, LAUNCHER_SCHEMA);
 		}
 	}
+	PopActiveSnapshot();
+	CommitTransactionCommand();
 	/* TODO: clean invalid database */
 	if (num_db > diskquota_max_workers) DiskquotaLauncherShmem->isDynamicWorker = true;
 }
@@ -1158,6 +1172,8 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 	bool pushed_active_snap = false;
 	bool ret                = true;
 
+	StartTransactionCommand();
+
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
 	 * and current SPI execute will fail. diskquota launcher process should
@@ -1165,7 +1181,6 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 	 */
 	PG_TRY();
 	{
-		StartTransactionCommand();
 		PushActiveSnapshot(GetTransactionSnapshot());
 		pushed_active_snap = true;
 
