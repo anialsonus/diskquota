@@ -1030,12 +1030,12 @@ init_database_list(void)
 	int       i;
 	int       state = 0;
 
-	SPI_connect_wrapper(&state);
 	/*
 	 * Don't catch errors in start_workers_from_dblist. Since this is the
 	 * startup worker for diskquota launcher. If error happens, we just let
 	 * launcher exits.
 	 */
+	SPI_connect_wrapper(&state);
 
 	ret = SPI_execute("select dbid from diskquota_namespace.database_list;", true, 0);
 	if (ret != SPI_OK_SELECT)
