@@ -1236,8 +1236,10 @@ set_per_segment_quota(PG_FUNCTION_ARGS)
 int
 worker_spi_get_extension_version(int *major, int *minor)
 {
-	int state = SPI_connect_wrapper();
+	int state = 0;
 	int ret   = SPI_execute("select extversion from pg_extension where extname = 'diskquota'", true, 0);
+
+	SPI_connect_wrapper(&state);
 
 	if (SPI_processed == 0)
 	{
@@ -1299,7 +1301,9 @@ get_rel_oid_list(bool is_init)
 {
 	List *oidlist = NIL;
 	int   ret;
-	int   state = SPI_connect_wrapper();
+	int   state = 0;
+
+	SPI_connect_wrapper(&state);
 
 #define SELECT_FROM_PG_CATALOG_PG_CLASS "select oid from pg_catalog.pg_class where oid >= $1 and relkind in ('r', 'm')"
 
@@ -1709,32 +1713,29 @@ check_hash_fullness(HTAB *hashp, int max_size, const char *warning_message, Time
 	return HASH_FIND;
 }
 
-int
-SPI_connect_wrapper(void)
+void
+SPI_connect_wrapper(int *state)
 {
-	int rc;
-	int state = 0;
-
 	SetCurrentStatementStartTimestamp();
 
 	if (!IsTransactionState())
 	{
 		StartTransactionCommand();
-		state |= IS_UNDER_TRANSACTION;
+		*state |= IS_UNDER_TRANSACTION;
 
 		PushActiveSnapshot(GetTransactionSnapshot());
-		state |= IS_ACTIVE_SNAPSHOT_PUSHED;
+		*state |= IS_ACTIVE_SNAPSHOT_PUSHED;
 	}
 
 	if (!SPI_context())
 	{
+		int rc;
+
 		if ((rc = SPI_connect()) != SPI_OK_CONNECT)
 			ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_connect failed"),
 			                errdetail("%s", SPI_result_code_string(rc))));
-		state |= IS_CONNECTED;
+		*state |= IS_CONNECTED;
 	}
-
-	return state;
 }
 
 void
