@@ -176,8 +176,9 @@ static bool
 is_altering_extension_to_default_version(char *version)
 {
 	int  spi_ret;
-	bool ret = false;
-	SPI_connect();
+	bool ret   = false;
+	int  state = 0;
+	SPI_connect_wrapper(&state);
 	spi_ret = SPI_execute("select default_version from pg_available_extensions where name ='diskquota'", true, 0);
 	if (spi_ret != SPI_OK_SELECT)
 		elog(ERROR, "[diskquota] failed to select diskquota default version during diskquota update.");
@@ -194,7 +195,7 @@ is_altering_extension_to_default_version(char *version)
 			if (strcmp(version, default_version) == 0) ret = true;
 		}
 	}
-	SPI_finish();
+	SPI_finish_wrapper(state);
 	return ret;
 }
 
@@ -1095,6 +1096,7 @@ init_database_list(void)
 		}
 	}
 	num_db = num;
+	SPI_finish_wrapper(state);
 	/* As update_monitor_db_mpp needs to execute sql, so can not put in the loop above */
 	for (int i = 0; i < diskquota_max_monitored_databases; i++)
 	{
@@ -1104,7 +1106,6 @@ init_database_list(void)
 			update_monitor_db_mpp(dbEntry->dbid, ADD_DB_TO_MONITOR, LAUNCHER_SCHEMA);
 		}
 	}
-	SPI_finish_wrapper(state);
 	/* TODO: clean invalid database */
 	if (num_db > diskquota_max_workers) DiskquotaLauncherShmem->isDynamicWorker = true;
 }
@@ -1205,7 +1206,6 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 		{
 			/* update_monitor_db_mpp runs sql to distribute dbid to segments */
 			Oid dbid = local_extension_ddl_message.dbid;
-			SPI_connect_wrapper(&state);
 			switch (local_extension_ddl_message.cmd)
 			{
 				case CMD_CREATE_EXTENSION:
@@ -1234,12 +1234,9 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 			HOLD_INTERRUPTS();
 			EmitErrorReport();
 			FlushErrorState();
-			state |= IS_ABORT;
 			RESUME_INTERRUPTS();
 		}
 		PG_END_TRY();
-
-		SPI_finish_wrapper(state);
 	}
 	DisconnectAndDestroyAllGangs(false);
 }
@@ -1324,6 +1321,9 @@ add_dbid_to_database_list(Oid dbid)
 	Oid   argt[1] = {OIDOID};
 	Datum argv[1] = {ObjectIdGetDatum(dbid)};
 
+	int state = 0;
+	SPI_connect_wrapper(&state);
+
 	ret = SPI_execute_with_args("select * from diskquota_namespace.database_list where dbid = $1", 1, argt, argv, NULL,
 	                            true, 0);
 
@@ -1340,6 +1340,8 @@ add_dbid_to_database_list(Oid dbid)
 		ereport(WARNING, (errmsg("[diskquota launcher] database id %d is already actived, "
 		                         "skip database_list update",
 		                         dbid)));
+
+		SPI_finish_wrapper(state);
 		return;
 	}
 
@@ -1354,7 +1356,7 @@ add_dbid_to_database_list(Oid dbid)
 		                       ret, strerror(saved_errno))));
 	}
 
-	return;
+	SPI_finish_wrapper(state);
 }
 
 /*
@@ -1365,6 +1367,8 @@ static void
 del_dbid_from_database_list(Oid dbid)
 {
 	int ret;
+	int state = 0;
+	SPI_connect_wrapper(&state);
 
 	/* errors will be cached in outer function */
 	ret = SPI_execute_with_args("delete from diskquota_namespace.database_list where dbid = $1", 1,
@@ -1381,6 +1385,8 @@ del_dbid_from_database_list(Oid dbid)
 		ereport(ERROR, (errmsg("[diskquota launcher] del_dbid_from_database_list: reason: %s, ret_code: %d.",
 		                       strerror(saved_errno), ret)));
 	}
+
+	SPI_finish_wrapper(state);
 }
 
 /*
@@ -1574,10 +1580,9 @@ static const char *
 diskquota_status_schema_version()
 {
 	static char ret_version[64];
-	int         ret = SPI_connect();
-	Assert(ret = SPI_OK_CONNECT);
-
-	ret = SPI_execute("select extversion from pg_extension where extname = 'diskquota'", true, 0);
+	int         state = 0;
+	SPI_connect_wrapper(&state);
+	int ret = SPI_execute("select extversion from pg_extension where extname = 'diskquota'", true, 0);
 
 	if (ret != SPI_OK_SELECT || SPI_processed != 1)
 	{
@@ -1604,11 +1609,11 @@ diskquota_status_schema_version()
 
 	StrNCpy(ret_version, version, sizeof(ret_version) - 1);
 
-	SPI_finish();
+	SPI_finish_wrapper(state);
 	return ret_version;
 
 fail:
-	SPI_finish();
+	SPI_finish_wrapper(state);
 	return "";
 }
 
