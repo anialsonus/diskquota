@@ -1126,9 +1126,7 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 static void
 delete_from_table_size_map(char *str)
 {
-	int            state;
 	StringInfoData delete_statement;
-	int            ret;
 
 	initStringInfo(&delete_statement);
 	appendStringInfo(&delete_statement,
@@ -1136,8 +1134,8 @@ delete_from_table_size_map(char *str)
 	                 "delete from diskquota.table_size "
 	                 "where (tableid, segid) in ( SELECT * FROM deleted_table );",
 	                 str);
-	state = SPI_connect_wrapper();
-	ret   = SPI_execute(delete_statement.data, false, 0);
+	int state = SPI_connect_wrapper();
+	int ret   = SPI_execute(delete_statement.data, false, 0);
 	if (ret != SPI_OK_DELETE)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
@@ -1148,14 +1146,12 @@ delete_from_table_size_map(char *str)
 static void
 insert_into_table_size_map(char *str)
 {
-	int            state;
 	StringInfoData insert_statement;
-	int            ret;
 
 	initStringInfo(&insert_statement);
 	appendStringInfo(&insert_statement, "insert into diskquota.table_size values %s;", str);
-	state = SPI_connect_wrapper();
-	ret   = SPI_execute(insert_statement.data, false, 0);
+	int state = SPI_connect_wrapper();
+	int ret   = SPI_execute(insert_statement.data, false, 0);
 	if (ret != SPI_OK_INSERT)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] insert_into_table_size_map SPI_execute failed: error code %d", ret)));
