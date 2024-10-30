@@ -1237,9 +1237,10 @@ int
 worker_spi_get_extension_version(int *major, int *minor)
 {
 	int state = 0;
-	int ret   = SPI_execute("select extversion from pg_extension where extname = 'diskquota'", true, 0);
 
 	SPI_connect_wrapper(&state);
+
+	int ret = SPI_execute("select extversion from pg_extension where extname = 'diskquota'", true, 0);
 
 	if (SPI_processed == 0)
 	{
@@ -1300,25 +1301,24 @@ List *
 get_rel_oid_list(bool is_init)
 {
 	List *oidlist = NIL;
-	int   ret;
-	int   state = 0;
+	int   state   = 0;
 
 	SPI_connect_wrapper(&state);
 
 #define SELECT_FROM_PG_CATALOG_PG_CLASS "select oid from pg_catalog.pg_class where oid >= $1 and relkind in ('r', 'm')"
 
-	ret = SPI_execute_with_args(is_init ? SELECT_FROM_PG_CATALOG_PG_CLASS
-	                                    " union distinct"
-	                                    " select tableid from diskquota.table_size where segid = -1"
-	                                    : SELECT_FROM_PG_CATALOG_PG_CLASS,
-	                            1,
-	                            (Oid[]){
-	                                    OIDOID,
-	                            },
-	                            (Datum[]){
-	                                    ObjectIdGetDatum(FirstNormalObjectId),
-	                            },
-	                            NULL, false, 0);
+	int ret = SPI_execute_with_args(is_init ? SELECT_FROM_PG_CATALOG_PG_CLASS
+	                                        " union distinct"
+	                                        " select tableid from diskquota.table_size where segid = -1"
+	                                        : SELECT_FROM_PG_CATALOG_PG_CLASS,
+	                                1,
+	                                (Oid[]){
+	                                        OIDOID,
+	                                },
+	                                (Datum[]){
+	                                        ObjectIdGetDatum(FirstNormalObjectId),
+	                                },
+	                                NULL, false, 0);
 
 #undef SELECT_FROM_PG_CATALOG_PG_CLASS
 
@@ -1753,7 +1753,7 @@ SPI_finish_wrapper(int state)
 
 	if ((state & IS_CONNECTED) && (rc = SPI_finish()) != SPI_OK_FINISH)
 		ereport(WARNING, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_finish failed"),
-		                errdetail("%s", SPI_result_code_string(rc))));
+		                  errdetail("%s", SPI_result_code_string(rc))));
 
 	if (state & IS_UNDER_TRANSACTION)
 	{
