@@ -856,7 +856,6 @@ refresh_disk_quota_usage(bool is_init)
 static void
 calculate_table_disk_usage(StringInfo active_oids, bool is_init)
 {
-	SPI_state         state;
 	bool              table_size_map_found;
 	int64             updated_total_size;
 	TableSizeEntry   *tsentry = NULL;
@@ -922,7 +921,7 @@ calculate_table_disk_usage(StringInfo active_oids, bool is_init)
 	 * calculate the file size for active table and update namespace_size_map
 	 * and role_size_map
 	 */
-	SPI_connect_wrapper(&state);
+	int state = SPI_connect_wrapper();
 
 	if ((plan = SPI_prepare(sql.data, 1, (Oid[]){OIDOID})) == NULL)
 		ereport(ERROR, (errmsg("[diskquota] SPI_prepare(\"%s\") failed", sql.data)));
@@ -1103,7 +1102,7 @@ calculate_table_disk_usage(StringInfo active_oids, bool is_init)
 
 	SPI_cursor_close(portal);
 	SPI_freeplan(plan);
-	SPI_finish_wrapper(&state);
+	SPI_finish_wrapper(state);
 	pfree(tablesize);
 
 	if (tableids) delete_from_table_size_map(tableids, segids);
@@ -1335,11 +1334,9 @@ flush_local_reject_map(void)
 static void
 dispatch_rejectmap(char *active_oids)
 {
-	SPI_state      state;
 	StringInfoData sql;
 
 	initStringInfo(&sql);
-
 	appendStringInfo(&sql,
 	                 "select diskquota.refresh_rejectmap("
 	                 "select array_agg((target_oid, database_oid, tablespace_oid, target_type, "
@@ -1348,13 +1345,12 @@ dispatch_rejectmap(char *active_oids)
 	                 "ARRAY[%s]::oid[]) from gp_dist_random('gp_id')",
 	                 active_oids);
 
-	SPI_connect_wrapper(&state);
-	int ret = SPI_execute(sql.data, false, 0);
+	int state = SPI_connect_wrapper();
+	int ret   = SPI_execute(sql.data, false, 0);
 	if (ret != SPI_OK_SELECT)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] diskquota.refresh_rejectmap SPI_execute failed: error code %d", ret)));
-	SPI_finish_wrapper(&state);
-
+	SPI_finish_wrapper(state);
 	pfree(sql.data);
 }
 
