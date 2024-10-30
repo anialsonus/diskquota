@@ -746,6 +746,7 @@ do_check_diskquota_state_is_ready(void)
 
 	HeapTuple tup = SPI_tuptable->vals[0];
 	Datum     dat;
+	int       state;
 	bool      isnull;
 
 	dat           = SPI_getbinval(tup, tupdesc, 1, &isnull);
