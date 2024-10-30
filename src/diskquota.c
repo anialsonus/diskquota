@@ -1154,9 +1154,9 @@ process_extension_ddl_message()
 static void
 do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_extension_ddl_message)
 {
+	int  old_num_db         = num_db;
 	bool pushed_active_snap = false;
 	bool ret                = true;
-	int  old_num_db         = num_db;
 
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
