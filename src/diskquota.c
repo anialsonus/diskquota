@@ -1154,8 +1154,9 @@ process_extension_ddl_message()
 static void
 do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_extension_ddl_message)
 {
-	int state      = 0;
-	int old_num_db = num_db;
+	bool pushed_active_snap = false;
+	bool ret                = true;
+	int  old_num_db         = num_db;
 
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
@@ -1164,7 +1165,9 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 	 */
 	PG_TRY();
 	{
-		SPI_connect_wrapper(&state);
+		StartTransactionCommand();
+		PushActiveSnapshot(GetTransactionSnapshot());
+		pushed_active_snap = true;
 
 		switch (local_extension_ddl_message.cmd)
 		{
@@ -1191,16 +1194,20 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
-		state |= IS_ABORT;
+		ret    = false;
 		num_db = old_num_db;
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
 
-	SPI_finish_wrapper(state);
+	if (pushed_active_snap) PopActiveSnapshot();
+	if (ret)
+		CommitTransactionCommand();
+	else
+		AbortCurrentTransaction();
 
 	/* update something in memory after transaction committed */
-	if (!(state & IS_ABORT))
+	if (ret)
 	{
 		PG_TRY();
 		{
