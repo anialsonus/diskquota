@@ -926,7 +926,7 @@ set_target_internal(Oid primaryoid, Oid spcoid, int64 quota_limit_mb, QuotaType 
 	bool  is_null = false;
 	Datum v;
 
-	bool connected = 0;
+	bool connected;
 	SPI_connect_wrapper(&connected);
 	/*
 	 * If error happens in set_target_internal, just return error messages to

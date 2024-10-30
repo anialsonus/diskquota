@@ -1161,7 +1161,7 @@ insert_into_table_size_map(char *str)
 
 	initStringInfo(&insert_statement);
 	appendStringInfo(&insert_statement, "insert into diskquota.table_size values %s;", str);
-	bool connected = 0;
+	bool connected;
 	SPI_connect_wrapper(&connected);
 	int ret = SPI_execute(insert_statement.data, false, 0);
 	if (ret != SPI_OK_INSERT)
@@ -1454,7 +1454,7 @@ do_load_quotas(void)
 	 */
 	clean_all_quota_limit();
 
-	bool connected = 0;
+	bool connected;
 	SPI_connect_wrapper(&connected);
 	/*
 	 * read quotas from diskquota.quota_config and target table
@@ -2282,7 +2282,7 @@ update_monitor_db_mpp(Oid dbid, FetchTableStatType action, const char *schema)
 	                 "SELECT %s.diskquota_fetch_table_stat(%d, '{%d}'::oid[]) FROM gp_dist_random('gp_id')", schema,
 	                 action, dbid);
 	/* Add current database to the monitored db cache on all segments */
-	bool connected = 0;
+	bool connected;
 	SPI_connect_wrapper(&connected);
 	int ret = SPI_execute(sql_command.data, true, 0);
 	SPI_finish_wrapper(connected);
