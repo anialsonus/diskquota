@@ -158,8 +158,8 @@ init_table_size_table(PG_FUNCTION_ARGS)
 	 * They do not work on entry db since we do not support dispatching
 	 * from entry-db currently.
 	 */
-	int state = 0;
-	SPI_connect_wrapper(&state);
+	bool connected;
+	SPI_connect_wrapper(&connected);
 
 	/* delete all the table size info in table_size if exist. */
 	ret = SPI_execute("truncate table diskquota.table_size", false, 0);
@@ -201,7 +201,7 @@ init_table_size_table(PG_FUNCTION_ARGS)
 	                            NULL, false, 0);
 	if (ret != SPI_OK_UPDATE) elog(ERROR, "cannot update state table: error code %d", ret);
 
-	SPI_finish_wrapper(state);
+	SPI_finish_wrapper(connected);
 	PG_RETURN_VOID();
 }
 
@@ -480,8 +480,8 @@ is_database_empty(void)
 	 * If error happens in is_database_empty, just return error messages to
 	 * the client side. So there is no need to catch the error.
 	 */
-	int state = 0;
-	SPI_connect_wrapper(&state);
+	bool connected;
+	SPI_connect_wrapper(&connected);
 
 	ret = SPI_execute(
 	        "INSERT INTO diskquota.state SELECT (count(relname) = 0)::int "
@@ -518,7 +518,7 @@ is_database_empty(void)
 	/*
 	 * And finish our transaction.
 	 */
-	SPI_finish_wrapper(state);
+	SPI_finish_wrapper(connected);
 	return is_empty;
 }
 
@@ -812,8 +812,8 @@ set_quota_config_internal(Oid targetoid, int64 quota_limit_mb, QuotaType type, f
 	/* Report error if diskquota is not ready. */
 	do_check_diskquota_state_is_ready();
 
-	int state = 0;
-	SPI_connect_wrapper(&state);
+	bool connected;
+	SPI_connect_wrapper(&connected);
 	/*
 	 * If error happens in set_quota_config_internal, just return error messages to
 	 * the client side. So there is no need to catch the error.
@@ -915,7 +915,7 @@ set_quota_config_internal(Oid targetoid, int64 quota_limit_mb, QuotaType type, f
 		}
 	}
 
-	SPI_finish_wrapper(state);
+	SPI_finish_wrapper(connected);
 }
 
 static int
@@ -926,8 +926,8 @@ set_target_internal(Oid primaryoid, Oid spcoid, int64 quota_limit_mb, QuotaType 
 	bool  is_null = false;
 	Datum v;
 
-	int state = 0;
-	SPI_connect_wrapper(&state);
+	bool connected = 0;
+	SPI_connect_wrapper(&connected);
 	/*
 	 * If error happens in set_target_internal, just return error messages to
 	 * the client side. So there is no need to catch the error.
@@ -1009,7 +1009,7 @@ set_target_internal(Oid primaryoid, Oid spcoid, int64 quota_limit_mb, QuotaType 
 		row_id = DatumGetInt32(v);
 	}
 
-	SPI_finish_wrapper(state);
+	SPI_finish_wrapper(connected);
 
 	/* No need to update the target table */
 
@@ -1158,8 +1158,8 @@ set_per_segment_quota(PG_FUNCTION_ARGS)
 	ereportif(ratio == 0, ERROR,
 	          (errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("per segment quota ratio can not be set to 0")));
 
-	int state = 0;
-	SPI_connect_wrapper(&state);
+	bool connected;
+	SPI_connect_wrapper(&connected);
 	/*
 	 * lock table quota_config table in exlusive mode
 	 *
@@ -1212,7 +1212,7 @@ set_per_segment_quota(PG_FUNCTION_ARGS)
 	/*
 	 * And finish our transaction.
 	 */
-	SPI_finish_wrapper(state);
+	SPI_finish_wrapper(connected);
 	PG_RETURN_VOID();
 }
 
@@ -1220,9 +1220,9 @@ int
 worker_spi_get_extension_version(int *major, int *minor)
 {
 	StartTransactionCommand();
-	int state = 0;
+	bool connected;
 
-	SPI_connect_wrapper(&state);
+	SPI_connect_wrapper(&connected);
 	PushActiveSnapshot(GetTransactionSnapshot());
 
 	int ret = SPI_execute("select extversion from pg_extension where extname = 'diskquota'", true, 0);
@@ -1268,7 +1268,7 @@ worker_spi_get_extension_version(int *major, int *minor)
 	ret = 0;
 
 out:
-	SPI_finish_wrapper(state);
+	SPI_finish_wrapper(connected);
 	PopActiveSnapshot();
 	CommitTransactionCommand();
 
@@ -1288,9 +1288,9 @@ List *
 get_rel_oid_list(bool is_init)
 {
 	List *oidlist = NIL;
-	int   state   = 0;
+	bool  connected;
 
-	SPI_connect_wrapper(&state);
+	SPI_connect_wrapper(&connected);
 
 #define SELECT_FROM_PG_CATALOG_PG_CLASS "select oid from pg_catalog.pg_class where oid >= $1 and relkind in ('r', 'm')"
 
@@ -1338,7 +1338,7 @@ get_rel_oid_list(bool is_init)
 			MemoryContextSwitchTo(oldcontext);
 		}
 	}
-	SPI_finish_wrapper(state);
+	SPI_finish_wrapper(connected);
 	return oidlist;
 }
 
@@ -1577,8 +1577,8 @@ get_per_segment_ratio(Oid spcoid)
 
 	if (!OidIsValid(spcoid)) return segratio;
 
-	int state = 0;
-	SPI_connect_wrapper(&state);
+	bool connected;
+	SPI_connect_wrapper(&connected);
 	/*
 	 * using row share lock to lock TABLESPACE_QUTAO
 	 * row to avoid concurrently updating the segratio
@@ -1612,7 +1612,7 @@ get_per_segment_ratio(Oid spcoid)
 			segratio = DatumGetFloat4(dat);
 		}
 	}
-	SPI_finish_wrapper(state);
+	SPI_finish_wrapper(connected);
 	return segratio;
 }
 
@@ -1704,17 +1704,11 @@ check_hash_fullness(HTAB *hashp, int max_size, const char *warning_message, Time
 }
 
 void
-SPI_connect_wrapper(int *state)
+SPI_connect_wrapper(bool *connected)
 {
-	*state = 0;
+	*connected = false;
 
 	SetCurrentStatementStartTimestamp();
-
-	if (!IsTransactionState())
-	{
-		StartTransactionCommand();
-		*state |= IS_UNDER_TRANSACTION;
-	}
 
 	if (!SPI_context())
 	{
@@ -1724,32 +1718,16 @@ SPI_connect_wrapper(int *state)
 			ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_connect failed"),
 			                errdetail("%s", SPI_result_code_string(rc))));
 
-		*state |= IS_CONNECTED;
-	}
-
-	if (*state & IS_UNDER_TRANSACTION)
-	{
-		PushActiveSnapshot(GetTransactionSnapshot());
-		*state |= IS_ACTIVE_SNAPSHOT_PUSHED;
+		*connected = true;
 	}
 }
 
 void
-SPI_finish_wrapper(int state)
+SPI_finish_wrapper(bool connected)
 {
 	int rc;
 
-	if (state & IS_ACTIVE_SNAPSHOT_PUSHED) PopActiveSnapshot();
-
-	if ((state & IS_CONNECTED) && SPI_context() && (rc = SPI_finish()) != SPI_OK_FINISH)
+	if (connected && SPI_context() && (rc = SPI_finish()) != SPI_OK_FINISH)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_finish failed"),
 		                errdetail("%s", SPI_result_code_string(rc))));
-
-	if (state & IS_UNDER_TRANSACTION)
-	{
-		if (state & IS_ABORT)
-			AbortCurrentTransaction();
-		else
-			CommitTransactionCommand();
-	}
 }

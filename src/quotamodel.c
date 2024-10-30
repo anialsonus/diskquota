@@ -724,8 +724,8 @@ do_check_diskquota_state_is_ready(void)
 {
 	int       ret;
 	TupleDesc tupdesc;
-	int       state = 0;
-	SPI_connect_wrapper(&state);
+	bool      connected;
+	SPI_connect_wrapper(&connected);
 	ret = SPI_execute("select state from diskquota.state", true, 0);
 	ereportif(ret != SPI_OK_SELECT, ERROR,
 	          (errcode(ERRCODE_INTERNAL_ERROR),
@@ -750,7 +750,7 @@ do_check_diskquota_state_is_ready(void)
 
 	dat           = SPI_getbinval(tup, tupdesc, 1, &isnull);
 	bool is_ready = (isnull ? DISKQUOTA_UNKNOWN_STATE : DatumGetInt32(dat)) == DISKQUOTA_READY_STATE;
-	SPI_finish_wrapper(state);
+	SPI_finish_wrapper(connected);
 
 	if (!is_ready && !diskquota_is_readiness_logged())
 	{
@@ -1144,13 +1144,13 @@ delete_from_table_size_map(char *str)
 	                 "delete from diskquota.table_size "
 	                 "where (tableid, segid) in ( SELECT * FROM deleted_table );",
 	                 str);
-	int state = 0;
-	SPI_connect_wrapper(&state);
+	bool connected;
+	SPI_connect_wrapper(&connected);
 	int ret = SPI_execute(delete_statement.data, false, 0);
 	if (ret != SPI_OK_DELETE)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
-	SPI_finish_wrapper(state);
+	SPI_finish_wrapper(connected);
 	pfree(delete_statement.data);
 }
 
@@ -1161,13 +1161,13 @@ insert_into_table_size_map(char *str)
 
 	initStringInfo(&insert_statement);
 	appendStringInfo(&insert_statement, "insert into diskquota.table_size values %s;", str);
-	int state = 0;
-	SPI_connect_wrapper(&state);
+	bool connected = 0;
+	SPI_connect_wrapper(&connected);
 	int ret = SPI_execute(insert_statement.data, false, 0);
 	if (ret != SPI_OK_INSERT)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] insert_into_table_size_map SPI_execute failed: error code %d", ret)));
-	SPI_finish_wrapper(state);
+	SPI_finish_wrapper(connected);
 	pfree(insert_statement.data);
 }
 
@@ -1454,8 +1454,8 @@ do_load_quotas(void)
 	 */
 	clean_all_quota_limit();
 
-	int state = 0;
-	SPI_connect_wrapper(&state);
+	bool connected = 0;
+	SPI_connect_wrapper(&connected);
 	/*
 	 * read quotas from diskquota.quota_config and target table
 	 */
@@ -1537,7 +1537,7 @@ do_load_quotas(void)
 		}
 	}
 
-	SPI_finish_wrapper(state);
+	SPI_finish_wrapper(connected);
 }
 
 /*
@@ -2282,10 +2282,10 @@ update_monitor_db_mpp(Oid dbid, FetchTableStatType action, const char *schema)
 	                 "SELECT %s.diskquota_fetch_table_stat(%d, '{%d}'::oid[]) FROM gp_dist_random('gp_id')", schema,
 	                 action, dbid);
 	/* Add current database to the monitored db cache on all segments */
-	int state = 0;
-	SPI_connect_wrapper(&state);
+	bool connected = 0;
+	SPI_connect_wrapper(&connected);
 	int ret = SPI_execute(sql_command.data, true, 0);
-	SPI_finish_wrapper(state);
+	SPI_finish_wrapper(connected);
 	pfree(sql_command.data);
 
 	ereportif(ret != SPI_OK_SELECT, ERROR,
