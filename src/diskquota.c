@@ -1005,7 +1005,7 @@ create_monitor_db_table(void)
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
-		state |= is_abort;
+		state |= IS_ABORT;
 		debug_query_string = NULL;
 		/* Now we can allow interrupts again */
 		RESUME_INTERRUPTS();
@@ -1189,7 +1189,7 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
-		state |= is_abort;
+		state |= IS_ABORT;
 		num_db = old_num_db;
 		RESUME_INTERRUPTS();
 	}
@@ -1198,7 +1198,7 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 	SPI_finish_wrapper(state);
 
 	/* update something in memory after transaction committed */
-	if (!(state & is_abort))
+	if (!(state & IS_ABORT))
 	{
 		PG_TRY();
 		{
@@ -1233,7 +1233,7 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 			HOLD_INTERRUPTS();
 			EmitErrorReport();
 			FlushErrorState();
-			state |= is_abort;
+			state |= IS_ABORT;
 			RESUME_INTERRUPTS();
 		}
 		PG_END_TRY();

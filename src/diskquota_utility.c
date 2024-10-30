@@ -1720,7 +1720,7 @@ SPI_connect_wrapper(void)
 	if (!IsTransactionState())
 	{
 		StartTransactionCommand();
-		state |= is_under_transaction;
+		state |= IS_UNDER_TRANSACTION;
 	}
 
 	if (!SPI_context())
@@ -1728,13 +1728,13 @@ SPI_connect_wrapper(void)
 		if ((rc = SPI_connect()) != SPI_OK_CONNECT)
 			ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_connect failed"),
 			                errdetail("%s", SPI_result_code_string(rc))));
-		state |= is_connected;
+		state |= IS_CONNECTED;
 	}
 
-	if (state & is_under_transaction)
+	if (state & IS_UNDER_TRANSACTION)
 	{
 		PushActiveSnapshot(GetTransactionSnapshot());
-		state |= is_active_snapshot_pushed;
+		state |= IS_ACTIVE_SNAPSHOT_PUSHED;
 	}
 
 	return state;
@@ -1745,15 +1745,15 @@ SPI_finish_wrapper(int state)
 {
 	int rc;
 
-	if ((state & is_connected) && (rc = SPI_finish()) != SPI_OK_FINISH)
+	if ((state & IS_CONNECTED) && (rc = SPI_finish()) != SPI_OK_FINISH)
 		ereport(WARNING, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_finish failed"),
 		                  errdetail("%s", SPI_result_code_string(rc))));
 
-	if (state & is_active_snapshot_pushed) PopActiveSnapshot();
+	if (state & IS_ACTIVE_SNAPSHOT_PUSHED) PopActiveSnapshot();
 
-	if (state & is_under_transaction)
+	if (state & IS_UNDER_TRANSACTION)
 	{
-		if (state & is_abort)
+		if (state & IS_ABORT)
 			AbortCurrentTransaction();
 		else
 			CommitTransactionCommand();

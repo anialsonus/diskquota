@@ -692,7 +692,7 @@ check_diskquota_state_is_ready()
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
-		state |= is_abort;
+		state |= IS_ABORT;
 		/* Now we can allow interrupts again */
 		RESUME_INTERRUPTS();
 	}
@@ -1407,13 +1407,13 @@ load_quotas(void)
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
-		state |= is_abort;
+		state |= IS_ABORT;
 		/* Now we can allow interrupts again */
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
 	SPI_finish_wrapper(state);
-	return !(state & is_abort);
+	return !(state & IS_ABORT);
 }
 
 /*
