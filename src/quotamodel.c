@@ -855,6 +855,7 @@ refresh_disk_quota_usage(bool is_init)
 		CommitTransactionCommand();
 	else
 		AbortCurrentTransaction();
+
 	return;
 }
 
