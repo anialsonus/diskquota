@@ -986,7 +986,7 @@ create_monitor_db_table(void)
 	 */
 	PG_TRY();
 	{
-		state = SPI_connect_wrapper();
+		SPI_connect_wrapper(&state);
 
 		/* debug_query_string need to be set for SPI_execute utility functions. */
 		debug_query_string = sql;
@@ -1005,7 +1005,7 @@ create_monitor_db_table(void)
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
-		state |= is_abort;
+		state |= IS_ABORT;
 		debug_query_string = NULL;
 		/* Now we can allow interrupts again */
 		RESUME_INTERRUPTS();
@@ -1027,8 +1027,9 @@ init_database_list(void)
 	int       num = 0;
 	int       ret;
 	int       i;
-	int       state = SPI_connect_wrapper();
+	int       state = 0;
 
+	SPI_connect_wrapper(&state);
 	/*
 	 * Don't catch errors in start_workers_from_dblist. Since this is the
 	 * startup worker for diskquota launcher. If error happens, we just let
@@ -1162,7 +1163,7 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 	 */
 	PG_TRY();
 	{
-		state = SPI_connect_wrapper();
+		SPI_connect_wrapper(&state);
 
 		switch (local_extension_ddl_message.cmd)
 		{
@@ -1189,7 +1190,7 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
-		state |= is_abort;
+		state |= IS_ABORT;
 		num_db = old_num_db;
 		RESUME_INTERRUPTS();
 	}
@@ -1198,13 +1199,13 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 	SPI_finish_wrapper(state);
 
 	/* update something in memory after transaction committed */
-	if (!(state & is_abort))
+	if (!(state & IS_ABORT))
 	{
 		PG_TRY();
 		{
 			/* update_monitor_db_mpp runs sql to distribute dbid to segments */
 			Oid dbid = local_extension_ddl_message.dbid;
-			state    = SPI_connect_wrapper();
+			SPI_connect_wrapper(&state);
 			switch (local_extension_ddl_message.cmd)
 			{
 				case CMD_CREATE_EXTENSION:
@@ -1233,7 +1234,7 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 			HOLD_INTERRUPTS();
 			EmitErrorReport();
 			FlushErrorState();
-			state |= is_abort;
+			state |= IS_ABORT;
 			RESUME_INTERRUPTS();
 		}
 		PG_END_TRY();

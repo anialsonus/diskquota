@@ -683,7 +683,7 @@ check_diskquota_state_is_ready()
 	 */
 	PG_TRY();
 	{
-		state    = SPI_connect_wrapper();
+		SPI_connect_wrapper(&state);
 		is_ready = do_check_diskquota_state_is_ready();
 	}
 	PG_CATCH();
@@ -692,7 +692,7 @@ check_diskquota_state_is_ready()
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
-		state |= is_abort;
+		state |= IS_ABORT;
 		/* Now we can allow interrupts again */
 		RESUME_INTERRUPTS();
 	}
@@ -1124,7 +1124,8 @@ delete_from_table_size_map(ArrayBuildState *tableids, ArrayBuildState *segids)
 {
 	Datum tableid = makeArrayResult(tableids, CurrentMemoryContext);
 	Datum segid   = makeArrayResult(segids, CurrentMemoryContext);
-	int   state   = SPI_connect_wrapper();
+	int state = 0;
+	SPI_connect_wrapper(&state);
 	int   ret     = SPI_execute_with_args(
 	              "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
 	              (Oid[]){OIDARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, segid}, NULL, false, 0);
@@ -1142,7 +1143,8 @@ update_table_size_map(ArrayBuildState *tableids, ArrayBuildState *sizes, ArrayBu
 	Datum tableid = makeArrayResult(tableids, CurrentMemoryContext);
 	Datum size    = makeArrayResult(sizes, CurrentMemoryContext);
 	Datum segid   = makeArrayResult(segids, CurrentMemoryContext);
-	int   state   = SPI_connect_wrapper();
+	int state = 0;
+	SPI_connect_wrapper(&state);
 	int   ret     = SPI_execute_with_args(
 	              "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
 	              (Oid[]){OIDARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, segid}, NULL, false, 0);
@@ -1150,8 +1152,7 @@ update_table_size_map(ArrayBuildState *tableids, ArrayBuildState *sizes, ArrayBu
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
 	SPI_finish_wrapper(state);
-
-	state = SPI_connect_wrapper();
+	SPI_connect_wrapper(&state);
 	ret   = SPI_execute_with_args("insert into diskquota.table_size select * from unnest($1, $2, $3)", 3,
 	                              (Oid[]){OIDARRAYOID, INT8ARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, size, segid}, NULL,
 	                              false, 0);
@@ -1399,7 +1400,7 @@ load_quotas(void)
 	 */
 	PG_TRY();
 	{
-		state = SPI_connect_wrapper();
+		SPI_connect_wrapper(&state);
 		do_load_quotas();
 	}
 	PG_CATCH();
@@ -1408,13 +1409,13 @@ load_quotas(void)
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
-		state |= is_abort;
+		state |= IS_ABORT;
 		/* Now we can allow interrupts again */
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
 	SPI_finish_wrapper(state);
-	return !(state & is_abort);
+	return !(state & IS_ABORT);
 }
 
 /*
