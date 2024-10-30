@@ -1716,15 +1716,14 @@ check_hash_fullness(HTAB *hashp, int max_size, const char *warning_message, Time
 void
 SPI_connect_wrapper(int *state)
 {
+	*state = 0;
+
 	SetCurrentStatementStartTimestamp();
 
 	if (!IsTransactionState())
 	{
 		StartTransactionCommand();
 		*state |= IS_UNDER_TRANSACTION;
-
-		PushActiveSnapshot(GetTransactionSnapshot());
-		*state |= IS_ACTIVE_SNAPSHOT_PUSHED;
 	}
 
 	if (!SPI_context())
@@ -1734,7 +1733,14 @@ SPI_connect_wrapper(int *state)
 		if ((rc = SPI_connect()) != SPI_OK_CONNECT)
 			ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_connect failed"),
 			                errdetail("%s", SPI_result_code_string(rc))));
+
 		*state |= IS_CONNECTED;
+	}
+
+	if (*state & IS_UNDER_TRANSACTION)
+	{
+		PushActiveSnapshot(GetTransactionSnapshot());
+		*state |= IS_ACTIVE_SNAPSHOT_PUSHED;
 	}
 }
 
@@ -1743,14 +1749,14 @@ SPI_finish_wrapper(int state)
 {
 	int rc;
 
-	if ((state & IS_CONNECTED) && SPI_context() && (rc = SPI_finish()) != SPI_OK_FINISH)
-		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_finish failed"),
+	if (state & IS_ACTIVE_SNAPSHOT_PUSHED) PopActiveSnapshot();
+
+	if ((state & IS_CONNECTED) && (rc = SPI_finish()) != SPI_OK_FINISH)
+		ereport(WARNING, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_finish failed"),
 		                errdetail("%s", SPI_result_code_string(rc))));
 
 	if (state & IS_UNDER_TRANSACTION)
 	{
-		if (state & IS_ACTIVE_SNAPSHOT_PUSHED) PopActiveSnapshot();
-
 		if (state & IS_ABORT)
 			AbortCurrentTransaction();
 		else
