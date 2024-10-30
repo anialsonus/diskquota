@@ -177,7 +177,8 @@ is_altering_extension_to_default_version(char *version)
 {
 	int  spi_ret;
 	bool ret = false;
-	SPI_connect();
+	bool connected;
+	SPI_connect_wrapper(&connected);
 	spi_ret = SPI_execute("select default_version from pg_available_extensions where name ='diskquota'", true, 0);
 	if (spi_ret != SPI_OK_SELECT)
 		elog(ERROR, "[diskquota] failed to select diskquota default version during diskquota update.");
@@ -194,7 +195,7 @@ is_altering_extension_to_default_version(char *version)
 			if (strcmp(version, default_version) == 0) ret = true;
 		}
 	}
-	SPI_finish();
+	SPI_finish_wrapper(connected);
 	return ret;
 }
 
@@ -958,8 +959,10 @@ disk_quota_launcher_main(Datum main_arg)
 static void
 create_monitor_db_table(void)
 {
-	int         state = 0;
 	const char *sql;
+	bool        connected          = false;
+	bool        pushed_active_snap = false;
+	bool        ret                = true;
 
 	/*
 	 * Create function diskquota.diskquota_fetch_table_stat in launcher
@@ -979,6 +982,8 @@ create_monitor_db_table(void)
 	      ".diskquota_active_table_type AS '$libdir/" DISKQUOTA_BINARY_NAME
 	      ".so', 'diskquota_fetch_table_stat' LANGUAGE C VOLATILE;";
 
+	StartTransactionCommand();
+
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
 	 * and current SPI execute will fail. diskquota launcher process should
@@ -986,7 +991,9 @@ create_monitor_db_table(void)
 	 */
 	PG_TRY();
 	{
-		SPI_connect_wrapper(&state);
+		SPI_connect_wrapper(&connected);
+		PushActiveSnapshot(GetTransactionSnapshot());
+		pushed_active_snap = true;
 
 		/* debug_query_string need to be set for SPI_execute utility functions. */
 		debug_query_string = sql;
@@ -1005,13 +1012,18 @@ create_monitor_db_table(void)
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
-		state |= IS_ABORT;
+		ret                = false;
 		debug_query_string = NULL;
 		/* Now we can allow interrupts again */
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	SPI_finish_wrapper(state);
+	SPI_finish_wrapper(connected);
+	if (pushed_active_snap) PopActiveSnapshot();
+	if (ret)
+		CommitTransactionCommand();
+	else
+		AbortCurrentTransaction();
 
 	debug_query_string = NULL;
 }
@@ -1027,15 +1039,17 @@ init_database_list(void)
 	int       num = 0;
 	int       ret;
 	int       i;
-	int       state = 0;
+	bool      connected;
 
-	SPI_connect_wrapper(&state);
 	/*
 	 * Don't catch errors in start_workers_from_dblist. Since this is the
 	 * startup worker for diskquota launcher. If error happens, we just let
 	 * launcher exits.
 	 */
+	StartTransactionCommand();
+	PushActiveSnapshot(GetTransactionSnapshot());
 
+	SPI_connect_wrapper(&connected);
 	ret = SPI_execute("select dbid from diskquota_namespace.database_list;", true, 0);
 	if (ret != SPI_OK_SELECT)
 	{
@@ -1095,6 +1109,7 @@ init_database_list(void)
 		}
 	}
 	num_db = num;
+	SPI_finish_wrapper(connected);
 	/* As update_monitor_db_mpp needs to execute sql, so can not put in the loop above */
 	for (int i = 0; i < diskquota_max_monitored_databases; i++)
 	{
@@ -1104,7 +1119,8 @@ init_database_list(void)
 			update_monitor_db_mpp(dbEntry->dbid, ADD_DB_TO_MONITOR, LAUNCHER_SCHEMA);
 		}
 	}
-	SPI_finish_wrapper(state);
+	PopActiveSnapshot();
+	CommitTransactionCommand();
 	/* TODO: clean invalid database */
 	if (num_db > diskquota_max_workers) DiskquotaLauncherShmem->isDynamicWorker = true;
 }
@@ -1153,8 +1169,11 @@ process_extension_ddl_message()
 static void
 do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_extension_ddl_message)
 {
-	int state      = 0;
-	int old_num_db = num_db;
+	int  old_num_db         = num_db;
+	bool pushed_active_snap = false;
+	bool ret                = true;
+
+	StartTransactionCommand();
 
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
@@ -1163,7 +1182,8 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 	 */
 	PG_TRY();
 	{
-		SPI_connect_wrapper(&state);
+		PushActiveSnapshot(GetTransactionSnapshot());
+		pushed_active_snap = true;
 
 		switch (local_extension_ddl_message.cmd)
 		{
@@ -1190,22 +1210,27 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
-		state |= IS_ABORT;
+		ret    = false;
 		num_db = old_num_db;
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
 
-	SPI_finish_wrapper(state);
-
+	if (pushed_active_snap) PopActiveSnapshot();
+	if (ret)
+		CommitTransactionCommand();
+	else
+		AbortCurrentTransaction();
 	/* update something in memory after transaction committed */
-	if (!(state & IS_ABORT))
+	if (ret)
 	{
 		PG_TRY();
 		{
 			/* update_monitor_db_mpp runs sql to distribute dbid to segments */
-			Oid dbid = local_extension_ddl_message.dbid;
-			SPI_connect_wrapper(&state);
+			StartTransactionCommand();
+			PushActiveSnapshot(GetTransactionSnapshot());
+			pushed_active_snap = true;
+			Oid dbid           = local_extension_ddl_message.dbid;
 			switch (local_extension_ddl_message.cmd)
 			{
 				case CMD_CREATE_EXTENSION:
@@ -1227,6 +1252,8 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 					                     local_extension_ddl_message.cmd)));
 					break;
 			}
+			if (pushed_active_snap) PopActiveSnapshot();
+			CommitTransactionCommand();
 		}
 		PG_CATCH();
 		{
@@ -1234,12 +1261,9 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 			HOLD_INTERRUPTS();
 			EmitErrorReport();
 			FlushErrorState();
-			state |= IS_ABORT;
 			RESUME_INTERRUPTS();
 		}
 		PG_END_TRY();
-
-		SPI_finish_wrapper(state);
 	}
 	DisconnectAndDestroyAllGangs(false);
 }
@@ -1324,6 +1348,9 @@ add_dbid_to_database_list(Oid dbid)
 	Oid   argt[1] = {OIDOID};
 	Datum argv[1] = {ObjectIdGetDatum(dbid)};
 
+	bool connected;
+	SPI_connect_wrapper(&connected);
+
 	ret = SPI_execute_with_args("select * from diskquota_namespace.database_list where dbid = $1", 1, argt, argv, NULL,
 	                            true, 0);
 
@@ -1340,6 +1367,8 @@ add_dbid_to_database_list(Oid dbid)
 		ereport(WARNING, (errmsg("[diskquota launcher] database id %d is already actived, "
 		                         "skip database_list update",
 		                         dbid)));
+
+		SPI_finish_wrapper(connected);
 		return;
 	}
 
@@ -1354,7 +1383,7 @@ add_dbid_to_database_list(Oid dbid)
 		                       ret, strerror(saved_errno))));
 	}
 
-	return;
+	SPI_finish_wrapper(connected);
 }
 
 /*
@@ -1364,7 +1393,9 @@ add_dbid_to_database_list(Oid dbid)
 static void
 del_dbid_from_database_list(Oid dbid)
 {
-	int ret;
+	int  ret;
+	bool connected;
+	SPI_connect_wrapper(&connected);
 
 	/* errors will be cached in outer function */
 	ret = SPI_execute_with_args("delete from diskquota_namespace.database_list where dbid = $1", 1,
@@ -1381,6 +1412,8 @@ del_dbid_from_database_list(Oid dbid)
 		ereport(ERROR, (errmsg("[diskquota launcher] del_dbid_from_database_list: reason: %s, ret_code: %d.",
 		                       strerror(saved_errno), ret)));
 	}
+
+	SPI_finish_wrapper(connected);
 }
 
 /*
@@ -1574,10 +1607,9 @@ static const char *
 diskquota_status_schema_version()
 {
 	static char ret_version[64];
-	int         ret = SPI_connect();
-	Assert(ret = SPI_OK_CONNECT);
-
-	ret = SPI_execute("select extversion from pg_extension where extname = 'diskquota'", true, 0);
+	bool        connected;
+	SPI_connect_wrapper(&connected);
+	int ret = SPI_execute("select extversion from pg_extension where extname = 'diskquota'", true, 0);
 
 	if (ret != SPI_OK_SELECT || SPI_processed != 1)
 	{
@@ -1604,11 +1636,11 @@ diskquota_status_schema_version()
 
 	StrNCpy(ret_version, version, sizeof(ret_version) - 1);
 
-	SPI_finish();
+	SPI_finish_wrapper(connected);
 	return ret_version;
 
 fail:
-	SPI_finish();
+	SPI_finish_wrapper(connected);
 	return "";
 }
 

@@ -78,14 +78,6 @@ extern int diskquota_worker_timeout;
 
 #define DatumGetArrayTypePwrapper(X) ((X) ? DatumGetArrayTypeP(X) : NULL)
 
-enum
-{
-	IS_CONNECTED              = 1 << 0,
-	IS_ACTIVE_SNAPSHOT_PUSHED = 1 << 1,
-	IS_ABORT                  = 1 << 2,
-	IS_UNDER_TRANSACTION      = 1 << 3,
-};
-
 typedef enum
 {
 	NAMESPACE_QUOTA = 0,
@@ -329,7 +321,7 @@ extern HTAB *DiskquotaShmemInitHash(const char *name, long init_size, long max_s
 extern void  refresh_monitored_dbid_cache(void);
 extern HASHACTION check_hash_fullness(HTAB *hashp, int max_size, const char *warning_message,
                                       TimestampTz *last_overflow_report);
-void              SPI_connect_wrapper(int *state);
-void              SPI_finish_wrapper(int state);
+void              SPI_connect_wrapper(bool *connected);
+void              SPI_finish_wrapper(bool connected);
 Datum SPI_getbinval_wrapper(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null, Oid typeid);
 #endif

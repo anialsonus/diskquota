@@ -473,13 +473,10 @@ diskquota_fetch_table_stat(PG_FUNCTION_ARGS)
 	{
 		MemoryContext oldcontext;
 		TupleDesc     tupdesc;
-		int           ret_code = SPI_connect();
-		if (ret_code != SPI_OK_CONNECT)
-		{
-			ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-			                errmsg("unable to connect to execute internal query. return code: %d.", ret_code)));
-		}
-		SPI_finish();
+		bool          connected;
+
+		SPI_connect_wrapper(&connected);
+		SPI_finish_wrapper(connected);
 
 		/* create a function context for cross-call persistence */
 		funcctx = SRF_FIRSTCALL_INIT();
