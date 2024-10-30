@@ -1227,7 +1227,10 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 		PG_TRY();
 		{
 			/* update_monitor_db_mpp runs sql to distribute dbid to segments */
-			Oid dbid = local_extension_ddl_message.dbid;
+			StartTransactionCommand();
+			PushActiveSnapshot(GetTransactionSnapshot());
+			pushed_active_snap = true;
+			Oid dbid           = local_extension_ddl_message.dbid;
 			switch (local_extension_ddl_message.cmd)
 			{
 				case CMD_CREATE_EXTENSION:
@@ -1249,6 +1252,8 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 					                     local_extension_ddl_message.cmd)));
 					break;
 			}
+			if (pushed_active_snap) PopActiveSnapshot();
+			CommitTransactionCommand();
 		}
 		PG_CATCH();
 		{
