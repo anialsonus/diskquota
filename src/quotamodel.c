@@ -1138,7 +1138,7 @@ delete_from_table_size_map(ArrayBuildState *tableids, ArrayBuildState *segids)
 {
 	Datum tableid = makeArrayResult(tableids, CurrentMemoryContext);
 	Datum segid   = makeArrayResult(segids, CurrentMemoryContext);
-	bool connected;
+	bool  connected;
 	SPI_connect_wrapper(&connected);
 	int ret = SPI_execute_with_args(
 	        "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
@@ -1157,7 +1157,7 @@ update_table_size_map(ArrayBuildState *tableids, ArrayBuildState *sizes, ArrayBu
 	Datum tableid = makeArrayResult(tableids, CurrentMemoryContext);
 	Datum size    = makeArrayResult(sizes, CurrentMemoryContext);
 	Datum segid   = makeArrayResult(segids, CurrentMemoryContext);
-	bool connected;
+	bool  connected;
 	SPI_connect_wrapper(&connected);
 	int ret = SPI_execute_with_args(
 	        "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
