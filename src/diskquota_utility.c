@@ -1721,6 +1721,9 @@ SPI_connect_wrapper(void)
 	{
 		StartTransactionCommand();
 		state |= IS_UNDER_TRANSACTION;
+
+		PushActiveSnapshot(GetTransactionSnapshot());
+		state |= IS_ACTIVE_SNAPSHOT_PUSHED;
 	}
 
 	if (!SPI_context())
@@ -1731,12 +1734,6 @@ SPI_connect_wrapper(void)
 		state |= IS_CONNECTED;
 	}
 
-	if (state & IS_UNDER_TRANSACTION)
-	{
-		PushActiveSnapshot(GetTransactionSnapshot());
-		state |= IS_ACTIVE_SNAPSHOT_PUSHED;
-	}
-
 	return state;
 }
 
@@ -1745,14 +1742,14 @@ SPI_finish_wrapper(int state)
 {
 	int rc;
 
-	if ((state & IS_CONNECTED) && (rc = SPI_finish()) != SPI_OK_FINISH)
-		ereport(WARNING, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_finish failed"),
-		                  errdetail("%s", SPI_result_code_string(rc))));
-
-	if (state & IS_ACTIVE_SNAPSHOT_PUSHED) PopActiveSnapshot();
+	if ((state & IS_CONNECTED) && SPI_context() && (rc = SPI_finish()) != SPI_OK_FINISH)
+		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_finish failed"),
+		                errdetail("%s", SPI_result_code_string(rc))));
 
 	if (state & IS_UNDER_TRANSACTION)
 	{
+		if (state & IS_ACTIVE_SNAPSHOT_PUSHED) PopActiveSnapshot();
+
 		if (state & IS_ABORT)
 			AbortCurrentTransaction();
 		else
