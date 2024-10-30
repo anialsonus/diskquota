@@ -673,7 +673,7 @@ vacuum_disk_quota_model(uint32 id)
 bool
 check_diskquota_state_is_ready()
 {
-	int  state;
+	int  state    = 0;
 	bool is_ready = false;
 
 	/*
@@ -1393,7 +1393,7 @@ truncateStringInfo(StringInfo str, int nchars)
 static bool
 load_quotas(void)
 {
-	int state;
+	int state = 0;
 
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
