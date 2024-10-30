@@ -1048,8 +1048,8 @@ init_database_list(void)
 	 */
 	StartTransactionCommand();
 	PushActiveSnapshot(GetTransactionSnapshot());
-	SPI_connect_wrapper(&state);
 
+	SPI_connect_wrapper(&state);
 	ret = SPI_execute("select dbid from diskquota_namespace.database_list;", true, 0);
 	if (ret != SPI_OK_SELECT)
 	{
