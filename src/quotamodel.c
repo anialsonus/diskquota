@@ -1124,11 +1124,10 @@ delete_from_table_size_map(ArrayBuildState *tableids, ArrayBuildState *segids)
 {
 	Datum tableid = makeArrayResult(tableids, CurrentMemoryContext);
 	Datum segid   = makeArrayResult(segids, CurrentMemoryContext);
-
-	int state = SPI_connect_wrapper();
-	int ret   = SPI_execute_with_args(
-	          "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
-	          (Oid[]){OIDARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, segid}, NULL, false, 0);
+	int   state   = SPI_connect_wrapper();
+	int   ret     = SPI_execute_with_args(
+	              "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
+	              (Oid[]){OIDARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, segid}, NULL, false, 0);
 	if (ret != SPI_OK_DELETE)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
@@ -1143,11 +1142,10 @@ update_table_size_map(ArrayBuildState *tableids, ArrayBuildState *sizes, ArrayBu
 	Datum tableid = makeArrayResult(tableids, CurrentMemoryContext);
 	Datum size    = makeArrayResult(sizes, CurrentMemoryContext);
 	Datum segid   = makeArrayResult(segids, CurrentMemoryContext);
-
-	int state = SPI_connect_wrapper();
-	int ret   = SPI_execute_with_args(
-	          "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
-	          (Oid[]){OIDARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, segid}, NULL, false, 0);
+	int   state   = SPI_connect_wrapper();
+	int   ret     = SPI_execute_with_args(
+	              "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
+	              (Oid[]){OIDARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, segid}, NULL, false, 0);
 	if (ret != SPI_OK_DELETE)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
