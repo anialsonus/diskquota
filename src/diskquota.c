@@ -1205,7 +1205,6 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 		CommitTransactionCommand();
 	else
 		AbortCurrentTransaction();
-
 	/* update something in memory after transaction committed */
 	if (ret)
 	{
