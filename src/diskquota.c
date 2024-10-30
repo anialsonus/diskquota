@@ -964,7 +964,6 @@ create_monitor_db_table(void)
 	bool        pushed_active_snap = false;
 	bool        ret                = true;
 
-	StartTransactionCommand();
 	/*
 	 * Create function diskquota.diskquota_fetch_table_stat in launcher
 	 * We need this function to distribute dbid to segments when creating
@@ -982,6 +981,8 @@ create_monitor_db_table(void)
 	      "CREATE FUNCTION " LAUNCHER_SCHEMA ".diskquota_fetch_table_stat(int4, oid[]) RETURNS setof " LAUNCHER_SCHEMA
 	      ".diskquota_active_table_type AS '$libdir/" DISKQUOTA_BINARY_NAME
 	      ".so', 'diskquota_fetch_table_stat' LANGUAGE C VOLATILE;";
+
+	StartTransactionCommand();
 
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
