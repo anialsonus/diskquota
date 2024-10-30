@@ -1708,8 +1708,6 @@ SPI_connect_wrapper(bool *connected)
 {
 	*connected = false;
 
-	SetCurrentStatementStartTimestamp();
-
 	if (!SPI_context())
 	{
 		int rc;
@@ -1725,9 +1723,12 @@ SPI_connect_wrapper(bool *connected)
 void
 SPI_finish_wrapper(bool connected)
 {
-	int rc;
+	if (connected && SPI_context())
+	{
+		int rc;
 
-	if (connected && SPI_context() && (rc = SPI_finish()) != SPI_OK_FINISH)
-		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_finish failed"),
-		                errdetail("%s", SPI_result_code_string(rc))));
+		if ((rc = SPI_finish()) != SPI_OK_FINISH)
+			ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_finish failed"),
+			                errdetail("%s", SPI_result_code_string(rc))));
+	}
 }
