@@ -673,8 +673,8 @@ vacuum_disk_quota_model(uint32 id)
 bool
 check_diskquota_state_is_ready()
 {
-	SPI_state state;
-	bool      is_ready = false;
+	int  state    = 0;
+	bool is_ready = false;
 
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
@@ -683,7 +683,7 @@ check_diskquota_state_is_ready()
 	 */
 	PG_TRY();
 	{
-		SPI_connect_wrapper(&state);
+		state    = SPI_connect_wrapper();
 		is_ready = do_check_diskquota_state_is_ready();
 	}
 	PG_CATCH();
@@ -692,12 +692,12 @@ check_diskquota_state_is_ready()
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
-		state.do_commit = false;
+		state |= is_abort;
 		/* Now we can allow interrupts again */
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	SPI_finish_wrapper(&state);
+	SPI_finish_wrapper(state);
 	return is_ready;
 }
 
@@ -1136,20 +1136,16 @@ calculate_table_disk_usage(StringInfo active_oids, bool is_init)
 static void
 delete_from_table_size_map(ArrayBuildState *tableids, ArrayBuildState *segids)
 {
-	SPI_state state;
-	int       ret;
-	Datum     tableid = makeArrayResult(tableids, CurrentMemoryContext);
-	Datum     segid   = makeArrayResult(segids, CurrentMemoryContext);
-
-	SPI_connect_wrapper(&state);
-	ret = SPI_execute_with_args(
-	        "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
-	        (Oid[]){OIDARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, segid}, NULL, false, 0);
+	Datum tableid = makeArrayResult(tableids, CurrentMemoryContext);
+	Datum segid   = makeArrayResult(segids, CurrentMemoryContext);
+	int   state   = SPI_connect_wrapper();
+	int   ret     = SPI_execute_with_args(
+	              "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
+	              (Oid[]){OIDARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, segid}, NULL, false, 0);
 	if (ret != SPI_OK_DELETE)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
-	SPI_finish_wrapper(&state);
-
+	SPI_finish_wrapper(state);
 	pfree(DatumGetPointer(tableid));
 	pfree(DatumGetPointer(segid));
 }
@@ -1157,30 +1153,26 @@ delete_from_table_size_map(ArrayBuildState *tableids, ArrayBuildState *segids)
 static void
 update_table_size_map(ArrayBuildState *tableids, ArrayBuildState *sizes, ArrayBuildState *segids)
 {
-	SPI_state state;
-	int       ret;
-	Datum     tableid = makeArrayResult(tableids, CurrentMemoryContext);
-	Datum     size    = makeArrayResult(sizes, CurrentMemoryContext);
-	Datum     segid   = makeArrayResult(segids, CurrentMemoryContext);
-
-	SPI_connect_wrapper(&state);
-	ret = SPI_execute_with_args(
-	        "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
-	        (Oid[]){OIDARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, segid}, NULL, false, 0);
+	Datum tableid = makeArrayResult(tableids, CurrentMemoryContext);
+	Datum size    = makeArrayResult(sizes, CurrentMemoryContext);
+	Datum segid   = makeArrayResult(segids, CurrentMemoryContext);
+	int   state   = SPI_connect_wrapper();
+	int   ret     = SPI_execute_with_args(
+	              "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
+	              (Oid[]){OIDARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, segid}, NULL, false, 0);
 	if (ret != SPI_OK_DELETE)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
-	SPI_finish_wrapper(&state);
+	SPI_finish_wrapper(state);
 
-	SPI_connect_wrapper(&state);
-	ret = SPI_execute_with_args("insert into diskquota.table_size select * from unnest($1, $2, $3)", 3,
-	                            (Oid[]){OIDARRAYOID, INT8ARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, size, segid}, NULL,
-	                            false, 0);
+	state = SPI_connect_wrapper();
+	ret   = SPI_execute_with_args("insert into diskquota.table_size select * from unnest($1, $2, $3)", 3,
+	                              (Oid[]){OIDARRAYOID, INT8ARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, size, segid}, NULL,
+	                              false, 0);
 	if (ret != SPI_OK_INSERT)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] insert_into_table_size_map SPI_execute failed: error code %d", ret)));
-	SPI_finish_wrapper(&state);
-
+	SPI_finish_wrapper(state);
 	pfree(DatumGetPointer(tableid));
 	pfree(DatumGetPointer(size));
 	pfree(DatumGetPointer(segid));
@@ -1386,7 +1378,7 @@ truncateStringInfo(StringInfo str, int nchars)
 static bool
 load_quotas(void)
 {
-	SPI_state state;
+	int state = 0;
 
 	/*
 	 * Cache Errors during SPI functions, for example a segment may be down
@@ -1395,7 +1387,7 @@ load_quotas(void)
 	 */
 	PG_TRY();
 	{
-		SPI_connect_wrapper(&state);
+		state = SPI_connect_wrapper();
 		do_load_quotas();
 	}
 	PG_CATCH();
@@ -1404,13 +1396,13 @@ load_quotas(void)
 		HOLD_INTERRUPTS();
 		EmitErrorReport();
 		FlushErrorState();
-		state.do_commit = false;
+		state |= is_abort;
 		/* Now we can allow interrupts again */
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	SPI_finish_wrapper(&state);
-	return state.do_commit;
+	SPI_finish_wrapper(state);
+	return !(state & is_abort);
 }
 
 /*
