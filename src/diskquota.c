@@ -1388,18 +1388,17 @@ ret:
 static void
 del_dbid_from_database_list(Oid dbid)
 {
-	int  ret;
 	bool connected_in_this_function = SPI_connect_if_not_yet();
 
 	/* errors will be cached in outer function */
-	ret = SPI_execute_with_args("delete from diskquota_namespace.database_list where dbid = $1", 1,
-	                            (Oid[]){
-	                                    OIDOID,
-	                            },
-	                            (Datum[]){
-	                                    ObjectIdGetDatum(dbid),
-	                            },
-	                            NULL, false, 0);
+	int ret = SPI_execute_with_args("delete from diskquota_namespace.database_list where dbid = $1", 1,
+	                                (Oid[]){
+	                                        OIDOID,
+	                                },
+	                                (Datum[]){
+	                                        ObjectIdGetDatum(dbid),
+	                                },
+	                                NULL, false, 0);
 	if (ret != SPI_OK_DELETE)
 	{
 		int saved_errno = errno;
