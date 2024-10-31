@@ -124,8 +124,6 @@ static void   check_role(Oid roleoid, char *rolname, int64 quota_limit_mb);
 Datum
 init_table_size_table(PG_FUNCTION_ARGS)
 {
-	int ret;
-
 	RangeVar *rv;
 	Relation  rel;
 	/*
@@ -161,7 +159,7 @@ init_table_size_table(PG_FUNCTION_ARGS)
 	bool connected_in_this_function = SPI_connect_if_not_yet();
 
 	/* delete all the table size info in table_size if exist. */
-	ret = SPI_execute("truncate table diskquota.table_size", false, 0);
+	int ret = SPI_execute("truncate table diskquota.table_size", false, 0);
 	if (ret != SPI_OK_UTILITY) elog(ERROR, "cannot truncate table_size table: error code %d", ret);
 
 	ret = SPI_execute(
