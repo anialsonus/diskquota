@@ -124,8 +124,6 @@ static void   check_role(Oid roleoid, char *rolname, int64 quota_limit_mb);
 Datum
 init_table_size_table(PG_FUNCTION_ARGS)
 {
-	int ret;
-
 	RangeVar *rv;
 	Relation  rel;
 	/*
@@ -158,10 +156,10 @@ init_table_size_table(PG_FUNCTION_ARGS)
 	 * They do not work on entry db since we do not support dispatching
 	 * from entry-db currently.
 	 */
-	bool connected = SPI_connect_wrapper();
+	bool connected_in_this_function = SPI_connect_if_not_yet();
 
 	/* delete all the table size info in table_size if exist. */
-	ret = SPI_execute("truncate table diskquota.table_size", false, 0);
+	int ret = SPI_execute("truncate table diskquota.table_size", false, 0);
 	if (ret != SPI_OK_UTILITY) elog(ERROR, "cannot truncate table_size table: error code %d", ret);
 
 	ret = SPI_execute(
@@ -200,7 +198,7 @@ init_table_size_table(PG_FUNCTION_ARGS)
 	                            NULL, false, 0);
 	if (ret != SPI_OK_UPDATE) elog(ERROR, "cannot update state table: error code %d", ret);
 
-	SPI_finish_wrapper(connected);
+	SPI_finish_if(connected_in_this_function);
 	PG_RETURN_VOID();
 }
 
@@ -471,7 +469,6 @@ diskquota_resume(PG_FUNCTION_ARGS)
 static bool
 is_database_empty(void)
 {
-	int       ret;
 	TupleDesc tupdesc;
 	bool      is_empty = false;
 
@@ -479,9 +476,9 @@ is_database_empty(void)
 	 * If error happens in is_database_empty, just return error messages to
 	 * the client side. So there is no need to catch the error.
 	 */
-	bool connected = SPI_connect_wrapper();
+	bool connected_in_this_function = SPI_connect_if_not_yet();
 
-	ret = SPI_execute(
+	int ret = SPI_execute(
 	        "INSERT INTO diskquota.state SELECT (count(relname) = 0)::int "
 	        "FROM "
 	        "  pg_class AS c, "
@@ -516,7 +513,7 @@ is_database_empty(void)
 	/*
 	 * And finish our transaction.
 	 */
-	SPI_finish_wrapper(connected);
+	SPI_finish_if(connected_in_this_function);
 	return is_empty;
 }
 
@@ -810,7 +807,7 @@ set_quota_config_internal(Oid targetoid, int64 quota_limit_mb, QuotaType type, f
 	/* Report error if diskquota is not ready. */
 	do_check_diskquota_state_is_ready();
 
-	bool connected = SPI_connect_wrapper();
+	bool connected_in_this_function = SPI_connect_if_not_yet();
 	/*
 	 * If error happens in set_quota_config_internal, just return error messages to
 	 * the client side. So there is no need to catch the error.
@@ -912,7 +909,7 @@ set_quota_config_internal(Oid targetoid, int64 quota_limit_mb, QuotaType type, f
 		}
 	}
 
-	SPI_finish_wrapper(connected);
+	SPI_finish_if(connected_in_this_function);
 }
 
 static int
@@ -922,7 +919,7 @@ set_target_internal(Oid primaryoid, Oid spcoid, int64 quota_limit_mb, QuotaType 
 	int   row_id  = -1;
 	bool  is_null = false;
 	Datum v;
-	bool  connected = SPI_connect_wrapper();
+	bool  connected_in_this_function = SPI_connect_if_not_yet();
 	/*
 	 * If error happens in set_target_internal, just return error messages to
 	 * the client side. So there is no need to catch the error.
@@ -1004,7 +1001,7 @@ set_target_internal(Oid primaryoid, Oid spcoid, int64 quota_limit_mb, QuotaType 
 		row_id = DatumGetInt32(v);
 	}
 
-	SPI_finish_wrapper(connected);
+	SPI_finish_if(connected_in_this_function);
 
 	/* No need to update the target table */
 
@@ -1153,7 +1150,7 @@ set_per_segment_quota(PG_FUNCTION_ARGS)
 	ereportif(ratio == 0, ERROR,
 	          (errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("per segment quota ratio can not be set to 0")));
 
-	bool connected = SPI_connect_wrapper();
+	bool connected_in_this_function = SPI_connect_if_not_yet();
 	/*
 	 * lock table quota_config table in exlusive mode
 	 *
@@ -1206,7 +1203,7 @@ set_per_segment_quota(PG_FUNCTION_ARGS)
 	/*
 	 * And finish our transaction.
 	 */
-	SPI_finish_wrapper(connected);
+	SPI_finish_if(connected_in_this_function);
 	PG_RETURN_VOID();
 }
 
@@ -1214,7 +1211,7 @@ int
 worker_spi_get_extension_version(int *major, int *minor)
 {
 	StartTransactionCommand();
-	bool connected = SPI_connect_wrapper();
+	bool connected_in_this_function = SPI_connect_if_not_yet();
 	PushActiveSnapshot(GetTransactionSnapshot());
 
 	int ret = SPI_execute("select extversion from pg_extension where extname = 'diskquota'", true, 0);
@@ -1260,7 +1257,7 @@ worker_spi_get_extension_version(int *major, int *minor)
 	ret = 0;
 
 out:
-	SPI_finish_wrapper(connected);
+	SPI_finish_if(connected_in_this_function);
 	PopActiveSnapshot();
 	CommitTransactionCommand();
 
@@ -1502,7 +1499,7 @@ get_per_segment_ratio(Oid spcoid)
 
 	if (!OidIsValid(spcoid)) return segratio;
 
-	bool connected = SPI_connect_wrapper();
+	bool connected_in_this_function = SPI_connect_if_not_yet();
 	/*
 	 * using row share lock to lock TABLESPACE_QUTAO
 	 * row to avoid concurrently updating the segratio
@@ -1536,7 +1533,7 @@ get_per_segment_ratio(Oid spcoid)
 			segratio = DatumGetFloat4(dat);
 		}
 	}
-	SPI_finish_wrapper(connected);
+	SPI_finish_if(connected_in_this_function);
 	return segratio;
 }
 
@@ -1628,7 +1625,7 @@ check_hash_fullness(HTAB *hashp, int max_size, const char *warning_message, Time
 }
 
 bool
-SPI_connect_wrapper(void)
+SPI_connect_if_not_yet(void)
 {
 	if (SPI_context()) return false;
 
@@ -1642,9 +1639,9 @@ SPI_connect_wrapper(void)
 }
 
 void
-SPI_finish_wrapper(bool connected)
+SPI_finish_if(bool connected_in_calling_function)
 {
-	if (!connected || !SPI_context()) return;
+	if (!connected_in_calling_function || !SPI_context()) return;
 
 	int rc = SPI_finish();
 

@@ -321,7 +321,7 @@ extern HTAB *DiskquotaShmemInitHash(const char *name, long init_size, long max_s
 extern void  refresh_monitored_dbid_cache(void);
 extern HASHACTION check_hash_fullness(HTAB *hashp, int max_size, const char *warning_message,
                                       TimestampTz *last_overflow_report);
-bool              SPI_connect_wrapper(void);
-void              SPI_finish_wrapper(bool connected);
+bool              SPI_connect_if_not_yet(void);
+void              SPI_finish_if(bool connected_in_this_function);
 Datum SPI_getbinval_wrapper(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null, Oid typeid);
 #endif
