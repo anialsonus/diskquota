@@ -1343,10 +1343,9 @@ add_dbid_to_database_list(Oid dbid)
 {
 	int ret;
 
-	Oid   argt[1] = {OIDOID};
-	Datum argv[1] = {ObjectIdGetDatum(dbid)};
-
-	bool connected = SPI_connect_wrapper();
+	Oid   argt[1]   = {OIDOID};
+	Datum argv[1]   = {ObjectIdGetDatum(dbid)};
+	bool  connected = SPI_connect_wrapper();
 
 	ret = SPI_execute_with_args("select * from diskquota_namespace.database_list where dbid = $1", 1, argt, argv, NULL,
 	                            true, 0);
