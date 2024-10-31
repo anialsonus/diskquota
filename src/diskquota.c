@@ -176,9 +176,8 @@ static bool
 is_altering_extension_to_default_version(char *version)
 {
 	int  spi_ret;
-	bool ret = false;
-	bool connected;
-	SPI_connect_wrapper(&connected);
+	bool ret       = false;
+	bool connected = SPI_connect_wrapper();
 	spi_ret = SPI_execute("select default_version from pg_available_extensions where name ='diskquota'", true, 0);
 	if (spi_ret != SPI_OK_SELECT)
 		elog(ERROR, "[diskquota] failed to select diskquota default version during diskquota update.");
@@ -991,7 +990,7 @@ create_monitor_db_table(void)
 	 */
 	PG_TRY();
 	{
-		SPI_connect_wrapper(&connected);
+		connected = SPI_connect_wrapper();
 		PushActiveSnapshot(GetTransactionSnapshot());
 		pushed_active_snap = true;
 
@@ -1039,7 +1038,6 @@ init_database_list(void)
 	int       num = 0;
 	int       ret;
 	int       i;
-	bool      connected;
 
 	/*
 	 * Don't catch errors in start_workers_from_dblist. Since this is the
@@ -1049,8 +1047,8 @@ init_database_list(void)
 	StartTransactionCommand();
 	PushActiveSnapshot(GetTransactionSnapshot());
 
-	SPI_connect_wrapper(&connected);
-	ret = SPI_execute("select dbid from diskquota_namespace.database_list;", true, 0);
+	bool connected = SPI_connect_wrapper();
+	ret            = SPI_execute("select dbid from diskquota_namespace.database_list;", true, 0);
 	if (ret != SPI_OK_SELECT)
 	{
 		int saved_errno = errno;
@@ -1345,11 +1343,9 @@ add_dbid_to_database_list(Oid dbid)
 {
 	int ret;
 
-	Oid   argt[1] = {OIDOID};
-	Datum argv[1] = {ObjectIdGetDatum(dbid)};
-
-	bool connected;
-	SPI_connect_wrapper(&connected);
+	Oid   argt[1]   = {OIDOID};
+	Datum argv[1]   = {ObjectIdGetDatum(dbid)};
+	bool  connected = SPI_connect_wrapper();
 
 	ret = SPI_execute_with_args("select * from diskquota_namespace.database_list where dbid = $1", 1, argt, argv, NULL,
 	                            true, 0);
@@ -1367,9 +1363,7 @@ add_dbid_to_database_list(Oid dbid)
 		ereport(WARNING, (errmsg("[diskquota launcher] database id %d is already actived, "
 		                         "skip database_list update",
 		                         dbid)));
-
-		SPI_finish_wrapper(connected);
-		return;
+		goto ret;
 	}
 
 	ret = SPI_execute_with_args("insert into diskquota_namespace.database_list values($1)", 1, argt, argv, NULL, false,
@@ -1383,6 +1377,7 @@ add_dbid_to_database_list(Oid dbid)
 		                       ret, strerror(saved_errno))));
 	}
 
+ret:
 	SPI_finish_wrapper(connected);
 }
 
@@ -1394,8 +1389,7 @@ static void
 del_dbid_from_database_list(Oid dbid)
 {
 	int  ret;
-	bool connected;
-	SPI_connect_wrapper(&connected);
+	bool connected = SPI_connect_wrapper();
 
 	/* errors will be cached in outer function */
 	ret = SPI_execute_with_args("delete from diskquota_namespace.database_list where dbid = $1", 1,
@@ -1607,9 +1601,8 @@ static const char *
 diskquota_status_schema_version()
 {
 	static char ret_version[64];
-	bool        connected;
-	SPI_connect_wrapper(&connected);
-	int ret = SPI_execute("select extversion from pg_extension where extname = 'diskquota'", true, 0);
+	bool        connected = SPI_connect_wrapper();
+	int         ret       = SPI_execute("select extversion from pg_extension where extname = 'diskquota'", true, 0);
 
 	if (ret != SPI_OK_SELECT || SPI_processed != 1)
 	{

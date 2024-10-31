@@ -447,10 +447,8 @@ diskquota_fetch_table_stat(PG_FUNCTION_ARGS)
 	{
 		MemoryContext oldcontext;
 		TupleDesc     tupdesc;
-		bool          connected;
 
-		SPI_connect_wrapper(&connected);
-		SPI_finish_wrapper(connected);
+		SPI_finish_wrapper(SPI_connect_wrapper());
 
 		/* create a function context for cross-call persistence */
 		funcctx = SRF_FIRSTCALL_INIT();
@@ -949,10 +947,8 @@ load_table_size(HTAB *local_table_stats_map)
 	ActiveTableEntryCombined *quota_entry;
 	SPIPlanPtr                plan;
 	Portal                    portal;
-	char                     *sql = "select tableid, size, segid from diskquota.table_size";
-	bool                      connected;
-
-	SPI_connect_wrapper(&connected);
+	char                     *sql       = "select tableid, size, segid from diskquota.table_size";
+	bool                      connected = SPI_connect_wrapper();
 
 	if ((plan = SPI_prepare(sql, 0, NULL)) == NULL)
 		ereport(ERROR, (errmsg("[diskquota] SPI_prepare(\"%s\") failed", sql)));
