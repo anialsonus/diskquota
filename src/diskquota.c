@@ -1363,9 +1363,7 @@ add_dbid_to_database_list(Oid dbid)
 		ereport(WARNING, (errmsg("[diskquota launcher] database id %d is already actived, "
 		                         "skip database_list update",
 		                         dbid)));
-
-		SPI_finish_wrapper(connected);
-		return;
+		goto ret;
 	}
 
 	ret = SPI_execute_with_args("insert into diskquota_namespace.database_list values($1)", 1, argt, argv, NULL, false,
@@ -1379,6 +1377,7 @@ add_dbid_to_database_list(Oid dbid)
 		                       ret, strerror(saved_errno))));
 	}
 
+ret:
 	SPI_finish_wrapper(connected);
 }
 
