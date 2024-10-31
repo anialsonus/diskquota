@@ -1695,6 +1695,8 @@ check_hash_fullness(HTAB *hashp, int max_size, const char *warning_message, Time
 bool
 SPI_connect_wrapper(void)
 {
+	if (SPI_context()) return false;
+
 	int rc;
 
 	if ((rc = SPI_connect()) != SPI_OK_CONNECT)
