@@ -469,7 +469,6 @@ diskquota_resume(PG_FUNCTION_ARGS)
 static bool
 is_database_empty(void)
 {
-	int       ret;
 	TupleDesc tupdesc;
 	bool      is_empty = false;
 
@@ -479,7 +478,7 @@ is_database_empty(void)
 	 */
 	bool connected_in_this_function = SPI_connect_if_not_yet();
 
-	ret = SPI_execute(
+	int ret = SPI_execute(
 	        "INSERT INTO diskquota.state SELECT (count(relname) = 0)::int "
 	        "FROM "
 	        "  pg_class AS c, "
