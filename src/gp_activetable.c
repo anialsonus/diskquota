@@ -473,10 +473,8 @@ diskquota_fetch_table_stat(PG_FUNCTION_ARGS)
 	{
 		MemoryContext oldcontext;
 		TupleDesc     tupdesc;
-		bool          connected;
 
-		SPI_connect_wrapper(&connected);
-		SPI_finish_wrapper(connected);
+		SPI_finish_wrapper(SPI_connect_wrapper());
 
 		/* create a function context for cross-call persistence */
 		funcctx = SRF_FIRSTCALL_INIT();
