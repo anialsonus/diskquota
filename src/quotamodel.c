@@ -1135,12 +1135,12 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 static void
 delete_from_table_size_map(ArrayBuildState *tableids, ArrayBuildState *segids)
 {
-	Datum tableid   = makeArrayResult(tableids, CurrentMemoryContext);
-	Datum segid     = makeArrayResult(segids, CurrentMemoryContext);
+	Datum tableid                    = makeArrayResult(tableids, CurrentMemoryContext);
+	Datum segid                      = makeArrayResult(segids, CurrentMemoryContext);
 	bool  connected_in_this_function = SPI_connect_if_not_yet();
-	int   ret       = SPI_execute_with_args(
-	                "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
-	                (Oid[]){OIDARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, segid}, NULL, false, 0);
+	int   ret                        = SPI_execute_with_args(
+	                                 "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
+	                                 (Oid[]){OIDARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, segid}, NULL, false, 0);
 	if (ret != SPI_OK_DELETE)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
@@ -1152,21 +1152,21 @@ delete_from_table_size_map(ArrayBuildState *tableids, ArrayBuildState *segids)
 static void
 update_table_size_map(ArrayBuildState *tableids, ArrayBuildState *sizes, ArrayBuildState *segids)
 {
-	Datum tableid   = makeArrayResult(tableids, CurrentMemoryContext);
-	Datum size      = makeArrayResult(sizes, CurrentMemoryContext);
-	Datum segid     = makeArrayResult(segids, CurrentMemoryContext);
+	Datum tableid                    = makeArrayResult(tableids, CurrentMemoryContext);
+	Datum size                       = makeArrayResult(sizes, CurrentMemoryContext);
+	Datum segid                      = makeArrayResult(segids, CurrentMemoryContext);
 	bool  connected_in_this_function = SPI_connect_if_not_yet();
-	int   ret       = SPI_execute_with_args(
-	                "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
-	                (Oid[]){OIDARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, segid}, NULL, false, 0);
+	int   ret                        = SPI_execute_with_args(
+	                                 "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
+	                                 (Oid[]){OIDARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, segid}, NULL, false, 0);
 	if (ret != SPI_OK_DELETE)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
 	SPI_finish_if(connected_in_this_function);
 	connected_in_this_function = SPI_connect_if_not_yet();
-	ret       = SPI_execute_with_args("insert into diskquota.table_size select * from unnest($1, $2, $3)", 3,
-	                                  (Oid[]){OIDARRAYOID, INT8ARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, size, segid}, NULL,
-	                                  false, 0);
+	ret = SPI_execute_with_args("insert into diskquota.table_size select * from unnest($1, $2, $3)", 3,
+	                            (Oid[]){OIDARRAYOID, INT8ARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, size, segid}, NULL,
+	                            false, 0);
 	if (ret != SPI_OK_INSERT)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] insert_into_table_size_map SPI_execute failed: error code %d", ret)));
