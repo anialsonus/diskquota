@@ -724,8 +724,8 @@ do_check_diskquota_state_is_ready(void)
 {
 	int       ret;
 	TupleDesc tupdesc;
-	bool      connected = SPI_connect_if_not_yet();
-	ret                 = SPI_execute("select state from diskquota.state", true, 0);
+	bool      connected_in_this_function = SPI_connect_if_not_yet();
+	ret                                  = SPI_execute("select state from diskquota.state", true, 0);
 	ereportif(ret != SPI_OK_SELECT, ERROR,
 	          (errcode(ERRCODE_INTERNAL_ERROR),
 	           errmsg("[diskquota] check diskquota state SPI_execute failed: error code %d", ret)));
@@ -752,7 +752,7 @@ do_check_diskquota_state_is_ready(void)
 	state         = isnull ? DISKQUOTA_UNKNOWN_STATE : DatumGetInt32(dat);
 	bool is_ready = state == DISKQUOTA_READY_STATE;
 
-	SPI_finish_if(connected);
+	SPI_finish_if(connected_in_this_function);
 
 	if (!is_ready && !diskquota_is_readiness_logged())
 	{
@@ -1147,12 +1147,12 @@ delete_from_table_size_map(char *str)
 	                 "delete from diskquota.table_size "
 	                 "where (tableid, segid) in ( SELECT * FROM deleted_table );",
 	                 str);
-	bool connected = SPI_connect_if_not_yet();
-	int  ret       = SPI_execute(delete_statement.data, false, 0);
+	bool connected_in_this_function = SPI_connect_if_not_yet();
+	int  ret                        = SPI_execute(delete_statement.data, false, 0);
 	if (ret != SPI_OK_DELETE)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
-	SPI_finish_if(connected);
+	SPI_finish_if(connected_in_this_function);
 	pfree(delete_statement.data);
 }
 
@@ -1163,12 +1163,12 @@ insert_into_table_size_map(char *str)
 
 	initStringInfo(&insert_statement);
 	appendStringInfo(&insert_statement, "insert into diskquota.table_size values %s;", str);
-	bool connected = SPI_connect_if_not_yet();
-	int  ret       = SPI_execute(insert_statement.data, false, 0);
+	bool connected_in_this_function = SPI_connect_if_not_yet();
+	int  ret                        = SPI_execute(insert_statement.data, false, 0);
 	if (ret != SPI_OK_INSERT)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] insert_into_table_size_map SPI_execute failed: error code %d", ret)));
-	SPI_finish_if(connected);
+	SPI_finish_if(connected_in_this_function);
 	pfree(insert_statement.data);
 }
 
@@ -1455,7 +1455,7 @@ do_load_quotas(void)
 	 */
 	clean_all_quota_limit();
 
-	bool connected = SPI_connect_if_not_yet();
+	bool connected_in_this_function = SPI_connect_if_not_yet();
 	/*
 	 * read quotas from diskquota.quota_config and target table
 	 */
@@ -1537,7 +1537,7 @@ do_load_quotas(void)
 		}
 	}
 
-	SPI_finish_if(connected);
+	SPI_finish_if(connected_in_this_function);
 }
 
 /*
@@ -2282,9 +2282,9 @@ update_monitor_db_mpp(Oid dbid, FetchTableStatType action, const char *schema)
 	                 "SELECT %s.diskquota_fetch_table_stat(%d, '{%d}'::oid[]) FROM gp_dist_random('gp_id')", schema,
 	                 action, dbid);
 	/* Add current database to the monitored db cache on all segments */
-	bool connected = SPI_connect_if_not_yet();
-	int  ret       = SPI_execute(sql_command.data, true, 0);
-	SPI_finish_if(connected);
+	bool connected_in_this_function = SPI_connect_if_not_yet();
+	int  ret                        = SPI_execute(sql_command.data, true, 0);
+	SPI_finish_if(connected_in_this_function);
 	pfree(sql_command.data);
 
 	ereportif(ret != SPI_OK_SELECT, ERROR,
