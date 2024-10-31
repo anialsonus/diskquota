@@ -935,7 +935,7 @@ calculate_table_disk_usage(StringInfo active_oids, bool is_init)
 	 * calculate the file size for active table and update namespace_size_map
 	 * and role_size_map
 	 */
-	bool connected = SPI_connect_wrapper();
+	bool connected_in_this_function = SPI_connect_if_not_yet();
 
 	if ((plan = SPI_prepare(sql.data, 1, (Oid[]){OIDOID})) == NULL)
 		ereport(ERROR, (errmsg("[diskquota] SPI_prepare(\"%s\") failed", sql.data)));
@@ -1116,7 +1116,7 @@ calculate_table_disk_usage(StringInfo active_oids, bool is_init)
 
 	SPI_cursor_close(portal);
 	SPI_freeplan(plan);
-	SPI_finish_wrapper(connected);
+	SPI_finish_if(connected_in_this_function);
 	pfree(tablesize);
 
 	if (tableids) delete_from_table_size_map(tableids, segids);
@@ -1358,12 +1358,12 @@ dispatch_rejectmap(char *active_oids)
 	                 "ARRAY[%s]::oid[]) from gp_dist_random('gp_id')",
 	                 active_oids);
 
-	bool connected = SPI_connect_wrapper();
-	int  ret       = SPI_execute(sql.data, false, 0);
+	bool connected_in_this_function = SPI_connect_if_not_yet();
+	int  ret                        = SPI_execute(sql.data, false, 0);
 	if (ret != SPI_OK_SELECT)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] diskquota.refresh_rejectmap SPI_execute failed: error code %d", ret)));
-	SPI_finish_wrapper(connected);
+	SPI_finish_if(connected_in_this_function);
 	pfree(sql.data);
 }
 
