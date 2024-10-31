@@ -194,7 +194,7 @@ is_altering_extension_to_default_version(char *version)
 			if (strcmp(version, default_version) == 0) ret = true;
 		}
 	}
-	SPI_finish_if_connected(connected);
+	SPI_finish_if(connected);
 	return ret;
 }
 
@@ -1017,7 +1017,7 @@ create_monitor_db_table(void)
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	SPI_finish_if_connected(connected);
+	SPI_finish_if(connected);
 	if (pushed_active_snap) PopActiveSnapshot();
 	if (ret)
 		CommitTransactionCommand();
@@ -1107,7 +1107,7 @@ init_database_list(void)
 		}
 	}
 	num_db = num;
-	SPI_finish_if_connected(connected);
+	SPI_finish_if(connected);
 	/* As update_monitor_db_mpp needs to execute sql, so can not put in the loop above */
 	for (int i = 0; i < diskquota_max_monitored_databases; i++)
 	{
@@ -1378,7 +1378,7 @@ add_dbid_to_database_list(Oid dbid)
 	}
 
 ret:
-	SPI_finish_if_connected(connected);
+	SPI_finish_if(connected);
 }
 
 /*
@@ -1407,7 +1407,7 @@ del_dbid_from_database_list(Oid dbid)
 		                       strerror(saved_errno), ret)));
 	}
 
-	SPI_finish_if_connected(connected);
+	SPI_finish_if(connected);
 }
 
 /*
@@ -1629,11 +1629,11 @@ diskquota_status_schema_version()
 
 	StrNCpy(ret_version, version, sizeof(ret_version) - 1);
 
-	SPI_finish_if_connected(connected);
+	SPI_finish_if(connected);
 	return ret_version;
 
 fail:
-	SPI_finish_if_connected(connected);
+	SPI_finish_if(connected);
 	return "";
 }
 

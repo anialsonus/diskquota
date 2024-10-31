@@ -320,5 +320,5 @@ extern void  refresh_monitored_dbid_cache(void);
 extern HASHACTION check_hash_fullness(HTAB *hashp, int max_size, const char *warning_message,
                                       TimestampTz *last_overflow_report);
 bool              SPI_connect_if_not_yet(void);
-void              SPI_finish_if_connected(bool connected);
+void              SPI_finish_if(bool connected);
 #endif

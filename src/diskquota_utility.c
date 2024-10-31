@@ -200,7 +200,7 @@ init_table_size_table(PG_FUNCTION_ARGS)
 	                            NULL, false, 0);
 	if (ret != SPI_OK_UPDATE) elog(ERROR, "cannot update state table: error code %d", ret);
 
-	SPI_finish_if_connected(connected);
+	SPI_finish_if(connected);
 	PG_RETURN_VOID();
 }
 
@@ -516,7 +516,7 @@ is_database_empty(void)
 	/*
 	 * And finish our transaction.
 	 */
-	SPI_finish_if_connected(connected);
+	SPI_finish_if(connected);
 	return is_empty;
 }
 
@@ -912,7 +912,7 @@ set_quota_config_internal(Oid targetoid, int64 quota_limit_mb, QuotaType type, f
 		}
 	}
 
-	SPI_finish_if_connected(connected);
+	SPI_finish_if(connected);
 }
 
 static int
@@ -1004,7 +1004,7 @@ set_target_internal(Oid primaryoid, Oid spcoid, int64 quota_limit_mb, QuotaType 
 		row_id = DatumGetInt32(v);
 	}
 
-	SPI_finish_if_connected(connected);
+	SPI_finish_if(connected);
 
 	/* No need to update the target table */
 
@@ -1206,7 +1206,7 @@ set_per_segment_quota(PG_FUNCTION_ARGS)
 	/*
 	 * And finish our transaction.
 	 */
-	SPI_finish_if_connected(connected);
+	SPI_finish_if(connected);
 	PG_RETURN_VOID();
 }
 
@@ -1260,7 +1260,7 @@ worker_spi_get_extension_version(int *major, int *minor)
 	ret = 0;
 
 out:
-	SPI_finish_if_connected(connected);
+	SPI_finish_if(connected);
 	PopActiveSnapshot();
 	CommitTransactionCommand();
 
@@ -1328,7 +1328,7 @@ get_rel_oid_list(bool is_init)
 			MemoryContextSwitchTo(oldcontext);
 		}
 	}
-	SPI_finish_if_connected(connected);
+	SPI_finish_if(connected);
 	return oidlist;
 }
 
@@ -1601,7 +1601,7 @@ get_per_segment_ratio(Oid spcoid)
 			segratio = DatumGetFloat4(dat);
 		}
 	}
-	SPI_finish_if_connected(connected);
+	SPI_finish_if(connected);
 	return segratio;
 }
 
@@ -1707,7 +1707,7 @@ SPI_connect_if_not_yet(void)
 }
 
 void
-SPI_finish_if_connected(bool connected)
+SPI_finish_if(bool connected)
 {
 	if (!connected || !SPI_context()) return;
 

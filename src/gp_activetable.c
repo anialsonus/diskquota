@@ -448,7 +448,7 @@ diskquota_fetch_table_stat(PG_FUNCTION_ARGS)
 		MemoryContext oldcontext;
 		TupleDesc     tupdesc;
 
-		SPI_finish_if_connected(SPI_connect_if_not_yet());
+		SPI_finish_if(SPI_connect_if_not_yet());
 
 		/* create a function context for cross-call persistence */
 		funcctx = SRF_FIRSTCALL_INIT();
@@ -1024,7 +1024,7 @@ load_table_size(HTAB *local_table_stats_map)
 	SPI_freetuptable(SPI_tuptable);
 	SPI_cursor_close(portal);
 	SPI_freeplan(plan);
-	SPI_finish_if_connected(connected);
+	SPI_finish_if(connected);
 }
 
 /*

@@ -752,7 +752,7 @@ do_check_diskquota_state_is_ready(void)
 	state         = isnull ? DISKQUOTA_UNKNOWN_STATE : DatumGetInt32(dat);
 	bool is_ready = state == DISKQUOTA_READY_STATE;
 
-	SPI_finish_if_connected(connected);
+	SPI_finish_if(connected);
 
 	if (!is_ready && !diskquota_is_readiness_logged())
 	{
@@ -1152,7 +1152,7 @@ delete_from_table_size_map(char *str)
 	if (ret != SPI_OK_DELETE)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
-	SPI_finish_if_connected(connected);
+	SPI_finish_if(connected);
 	pfree(delete_statement.data);
 }
 
@@ -1168,7 +1168,7 @@ insert_into_table_size_map(char *str)
 	if (ret != SPI_OK_INSERT)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] insert_into_table_size_map SPI_execute failed: error code %d", ret)));
-	SPI_finish_if_connected(connected);
+	SPI_finish_if(connected);
 	pfree(insert_statement.data);
 }
 
@@ -1537,7 +1537,7 @@ do_load_quotas(void)
 		}
 	}
 
-	SPI_finish_if_connected(connected);
+	SPI_finish_if(connected);
 }
 
 /*
@@ -2284,7 +2284,7 @@ update_monitor_db_mpp(Oid dbid, FetchTableStatType action, const char *schema)
 	/* Add current database to the monitored db cache on all segments */
 	bool connected = SPI_connect_if_not_yet();
 	int  ret       = SPI_execute(sql_command.data, true, 0);
-	SPI_finish_if_connected(connected);
+	SPI_finish_if(connected);
 	pfree(sql_command.data);
 
 	ereportif(ret != SPI_OK_SELECT, ERROR,
