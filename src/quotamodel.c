@@ -724,9 +724,8 @@ do_check_diskquota_state_is_ready(void)
 {
 	int       ret;
 	TupleDesc tupdesc;
-	bool      connected;
-	SPI_connect_wrapper(&connected);
-	ret = SPI_execute("select state from diskquota.state", true, 0);
+	bool      connected = SPI_connect_wrapper();
+	ret                 = SPI_execute("select state from diskquota.state", true, 0);
 	ereportif(ret != SPI_OK_SELECT, ERROR,
 	          (errcode(ERRCODE_INTERNAL_ERROR),
 	           errmsg("[diskquota] check diskquota state SPI_execute failed: error code %d", ret)));
@@ -1148,9 +1147,8 @@ delete_from_table_size_map(char *str)
 	                 "delete from diskquota.table_size "
 	                 "where (tableid, segid) in ( SELECT * FROM deleted_table );",
 	                 str);
-	bool connected;
-	SPI_connect_wrapper(&connected);
-	int ret = SPI_execute(delete_statement.data, false, 0);
+	bool connected = SPI_connect_wrapper();
+	int  ret       = SPI_execute(delete_statement.data, false, 0);
 	if (ret != SPI_OK_DELETE)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
@@ -1165,9 +1163,8 @@ insert_into_table_size_map(char *str)
 
 	initStringInfo(&insert_statement);
 	appendStringInfo(&insert_statement, "insert into diskquota.table_size values %s;", str);
-	bool connected;
-	SPI_connect_wrapper(&connected);
-	int ret = SPI_execute(insert_statement.data, false, 0);
+	bool connected = SPI_connect_wrapper();
+	int  ret       = SPI_execute(insert_statement.data, false, 0);
 	if (ret != SPI_OK_INSERT)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] insert_into_table_size_map SPI_execute failed: error code %d", ret)));
@@ -1458,8 +1455,7 @@ do_load_quotas(void)
 	 */
 	clean_all_quota_limit();
 
-	bool connected;
-	SPI_connect_wrapper(&connected);
+	bool connected = SPI_connect_wrapper();
 	/*
 	 * read quotas from diskquota.quota_config and target table
 	 */
@@ -2286,9 +2282,8 @@ update_monitor_db_mpp(Oid dbid, FetchTableStatType action, const char *schema)
 	                 "SELECT %s.diskquota_fetch_table_stat(%d, '{%d}'::oid[]) FROM gp_dist_random('gp_id')", schema,
 	                 action, dbid);
 	/* Add current database to the monitored db cache on all segments */
-	bool connected;
-	SPI_connect_wrapper(&connected);
-	int ret = SPI_execute(sql_command.data, true, 0);
+	bool connected = SPI_connect_wrapper();
+	int  ret       = SPI_execute(sql_command.data, true, 0);
 	SPI_finish_wrapper(connected);
 	pfree(sql_command.data);
 

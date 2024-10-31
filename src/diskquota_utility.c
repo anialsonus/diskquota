@@ -158,8 +158,7 @@ init_table_size_table(PG_FUNCTION_ARGS)
 	 * They do not work on entry db since we do not support dispatching
 	 * from entry-db currently.
 	 */
-	bool connected;
-	SPI_connect_wrapper(&connected);
+	bool connected = SPI_connect_wrapper();
 
 	/* delete all the table size info in table_size if exist. */
 	ret = SPI_execute("truncate table diskquota.table_size", false, 0);
@@ -480,8 +479,7 @@ is_database_empty(void)
 	 * If error happens in is_database_empty, just return error messages to
 	 * the client side. So there is no need to catch the error.
 	 */
-	bool connected;
-	SPI_connect_wrapper(&connected);
+	bool connected = SPI_connect_wrapper();
 
 	ret = SPI_execute(
 	        "INSERT INTO diskquota.state SELECT (count(relname) = 0)::int "
@@ -812,8 +810,7 @@ set_quota_config_internal(Oid targetoid, int64 quota_limit_mb, QuotaType type, f
 	/* Report error if diskquota is not ready. */
 	do_check_diskquota_state_is_ready();
 
-	bool connected;
-	SPI_connect_wrapper(&connected);
+	bool connected = SPI_connect_wrapper();
 	/*
 	 * If error happens in set_quota_config_internal, just return error messages to
 	 * the client side. So there is no need to catch the error.
@@ -925,9 +922,7 @@ set_target_internal(Oid primaryoid, Oid spcoid, int64 quota_limit_mb, QuotaType 
 	int   row_id  = -1;
 	bool  is_null = false;
 	Datum v;
-
-	bool connected;
-	SPI_connect_wrapper(&connected);
+	bool  connected = SPI_connect_wrapper();
 	/*
 	 * If error happens in set_target_internal, just return error messages to
 	 * the client side. So there is no need to catch the error.
@@ -1158,8 +1153,7 @@ set_per_segment_quota(PG_FUNCTION_ARGS)
 	ereportif(ratio == 0, ERROR,
 	          (errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("per segment quota ratio can not be set to 0")));
 
-	bool connected;
-	SPI_connect_wrapper(&connected);
+	bool connected = SPI_connect_wrapper();
 	/*
 	 * lock table quota_config table in exlusive mode
 	 *
@@ -1220,9 +1214,7 @@ int
 worker_spi_get_extension_version(int *major, int *minor)
 {
 	StartTransactionCommand();
-	bool connected;
-
-	SPI_connect_wrapper(&connected);
+	bool connected = SPI_connect_wrapper();
 	PushActiveSnapshot(GetTransactionSnapshot());
 
 	int ret = SPI_execute("select extversion from pg_extension where extname = 'diskquota'", true, 0);
@@ -1287,10 +1279,8 @@ out:
 List *
 get_rel_oid_list(bool is_init)
 {
-	List *oidlist = NIL;
-	bool  connected;
-
-	SPI_connect_wrapper(&connected);
+	List *oidlist   = NIL;
+	bool  connected = SPI_connect_wrapper();
 
 #define SELECT_FROM_PG_CATALOG_PG_CLASS "select oid from pg_catalog.pg_class where oid >= $1 and relkind in ('r', 'm')"
 
@@ -1577,8 +1567,7 @@ get_per_segment_ratio(Oid spcoid)
 
 	if (!OidIsValid(spcoid)) return segratio;
 
-	bool connected;
-	SPI_connect_wrapper(&connected);
+	bool connected = SPI_connect_wrapper();
 	/*
 	 * using row share lock to lock TABLESPACE_QUTAO
 	 * row to avoid concurrently updating the segratio
@@ -1703,32 +1692,26 @@ check_hash_fullness(HTAB *hashp, int max_size, const char *warning_message, Time
 	return HASH_FIND;
 }
 
-void
-SPI_connect_wrapper(bool *connected)
+bool
+SPI_connect_wrapper(void)
 {
-	*connected = false;
+	int rc;
 
-	if (!SPI_context())
-	{
-		int rc;
+	if ((rc = SPI_connect()) != SPI_OK_CONNECT)
+		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_connect failed"),
+		                errdetail("%s", SPI_result_code_string(rc))));
 
-		if ((rc = SPI_connect()) != SPI_OK_CONNECT)
-			ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_connect failed"),
-			                errdetail("%s", SPI_result_code_string(rc))));
-
-		*connected = true;
-	}
+	return true;
 }
 
 void
 SPI_finish_wrapper(bool connected)
 {
-	if (connected && SPI_context())
-	{
-		int rc;
+	if (!connected) return;
 
-		if ((rc = SPI_finish()) != SPI_OK_FINISH)
-			ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_finish failed"),
-			                errdetail("%s", SPI_result_code_string(rc))));
-	}
+	int rc;
+
+	if (SPI_context() && (rc = SPI_finish()) != SPI_OK_FINISH)
+		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_finish failed"),
+		                errdetail("%s", SPI_result_code_string(rc))));
 }
