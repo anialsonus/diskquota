@@ -1697,11 +1697,11 @@ SPI_connect_wrapper(void)
 {
 	if (SPI_context()) return false;
 
-	int rc;
+	int rc = SPI_connect();
 
-	if ((rc = SPI_connect()) != SPI_OK_CONNECT)
-		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_connect failed"),
-		                errdetail("%s", SPI_result_code_string(rc))));
+	ereportif(rc != SPI_OK_CONNECT, ERROR,
+	          (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_connect failed"),
+	           errdetail("%s", SPI_result_code_string(rc))));
 
 	return true;
 }
@@ -1709,11 +1709,11 @@ SPI_connect_wrapper(void)
 void
 SPI_finish_wrapper(bool connected)
 {
-	if (!connected) return;
+	if (!connected || !SPI_context()) return;
 
-	int rc;
+	int rc = SPI_finish();
 
-	if (SPI_context() && (rc = SPI_finish()) != SPI_OK_FINISH)
-		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_finish failed"),
-		                errdetail("%s", SPI_result_code_string(rc))));
+	ereportif(rc != SPI_OK_FINISH, ERROR,
+	          (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_finish failed"),
+	           errdetail("%s", SPI_result_code_string(rc))));
 }
