@@ -176,8 +176,8 @@ static bool
 is_altering_extension_to_default_version(char *version)
 {
 	int  spi_ret;
-	bool ret = false;
-	SPI_connect();
+	bool ret                        = false;
+	bool connected_in_this_function = SPI_connect_if_not_yet();
 	spi_ret = SPI_execute("select default_version from pg_available_extensions where name ='diskquota'", true, 0);
 	if (spi_ret != SPI_OK_SELECT)
 		elog(ERROR, "[diskquota] failed to select diskquota default version during diskquota update.");
@@ -194,7 +194,7 @@ is_altering_extension_to_default_version(char *version)
 			if (strcmp(version, default_version) == 0) ret = true;
 		}
 	}
-	SPI_finish();
+	SPI_finish_if(connected_in_this_function);
 	return ret;
 }
 
@@ -959,9 +959,9 @@ static void
 create_monitor_db_table(void)
 {
 	const char *sql;
-	bool        connected          = false;
-	bool        pushed_active_snap = false;
-	bool        ret                = true;
+	bool        connected_in_this_function = false;
+	bool        pushed_active_snap         = false;
+	bool        ret                        = true;
 
 	/*
 	 * Create function diskquota.diskquota_fetch_table_stat in launcher
@@ -990,21 +990,14 @@ create_monitor_db_table(void)
 	 */
 	PG_TRY();
 	{
-		int ret_code = SPI_connect();
-		if (ret_code != SPI_OK_CONNECT)
-		{
-			ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-			                errmsg("[diskquota launcher] unable to connect to execute internal query. return code: %d.",
-			                       ret_code)));
-		}
-		connected = true;
+		connected_in_this_function = SPI_connect_if_not_yet();
 		PushActiveSnapshot(GetTransactionSnapshot());
 		pushed_active_snap = true;
 
 		/* debug_query_string need to be set for SPI_execute utility functions. */
 		debug_query_string = sql;
 
-		ret_code = SPI_execute(sql, false, 0);
+		int ret_code = SPI_execute(sql, false, 0);
 		if (ret_code != SPI_OK_UTILITY)
 		{
 			int saved_errno = errno;
@@ -1024,7 +1017,7 @@ create_monitor_db_table(void)
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	if (connected) SPI_finish();
+	SPI_finish_if(connected_in_this_function);
 	if (pushed_active_snap) PopActiveSnapshot();
 	if (ret)
 		CommitTransactionCommand();
@@ -1054,14 +1047,8 @@ init_database_list(void)
 	StartTransactionCommand();
 	PushActiveSnapshot(GetTransactionSnapshot());
 
-	ret = SPI_connect();
-	if (ret != SPI_OK_CONNECT)
-	{
-		int saved_errno = errno;
-		ereport(ERROR, (errmsg("[diskquota launcher] SPI connect error, reason: %s, return code: %d.",
-		                       strerror(saved_errno), ret)));
-	}
-	ret = SPI_execute("select dbid from diskquota_namespace.database_list;", true, 0);
+	bool connected_in_this_function = SPI_connect_if_not_yet();
+	ret                             = SPI_execute("select dbid from diskquota_namespace.database_list;", true, 0);
 	if (ret != SPI_OK_SELECT)
 	{
 		int saved_errno = errno;
@@ -1120,6 +1107,7 @@ init_database_list(void)
 		}
 	}
 	num_db = num;
+	SPI_finish_if(connected_in_this_function);
 	/* As update_monitor_db_mpp needs to execute sql, so can not put in the loop above */
 	for (int i = 0; i < diskquota_max_monitored_databases; i++)
 	{
@@ -1129,7 +1117,6 @@ init_database_list(void)
 			update_monitor_db_mpp(dbEntry->dbid, ADD_DB_TO_MONITOR, LAUNCHER_SCHEMA);
 		}
 	}
-	SPI_finish();
 	PopActiveSnapshot();
 	CommitTransactionCommand();
 	/* TODO: clean invalid database */
@@ -1181,7 +1168,6 @@ static void
 do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_extension_ddl_message)
 {
 	int  old_num_db         = num_db;
-	bool connected          = false;
 	bool pushed_active_snap = false;
 	bool ret                = true;
 
@@ -1194,13 +1180,6 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 	 */
 	PG_TRY();
 	{
-		int ret_code = SPI_connect();
-		if (ret_code != SPI_OK_CONNECT)
-		{
-			ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-			                errmsg("unable to connect to execute internal query. return code: %d.", ret_code)));
-		}
-		connected = true;
 		PushActiveSnapshot(GetTransactionSnapshot());
 		pushed_active_snap = true;
 
@@ -1235,7 +1214,6 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 	}
 	PG_END_TRY();
 
-	if (connected) SPI_finish();
 	if (pushed_active_snap) PopActiveSnapshot();
 	if (ret)
 		CommitTransactionCommand();
@@ -1251,12 +1229,6 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 			PushActiveSnapshot(GetTransactionSnapshot());
 			pushed_active_snap = true;
 			Oid dbid           = local_extension_ddl_message.dbid;
-			int ret_code       = SPI_connect();
-			if (ret_code != SPI_OK_CONNECT)
-			{
-				ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-				                errmsg("unable to connect to execute internal query. return code: %d.", ret_code)));
-			}
 			switch (local_extension_ddl_message.cmd)
 			{
 				case CMD_CREATE_EXTENSION:
@@ -1278,7 +1250,6 @@ do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_
 					                     local_extension_ddl_message.cmd)));
 					break;
 			}
-			SPI_finish();
 			if (pushed_active_snap) PopActiveSnapshot();
 			CommitTransactionCommand();
 		}
@@ -1372,8 +1343,9 @@ add_dbid_to_database_list(Oid dbid)
 {
 	int ret;
 
-	Oid   argt[1] = {OIDOID};
-	Datum argv[1] = {ObjectIdGetDatum(dbid)};
+	Oid   argt[1]                    = {OIDOID};
+	Datum argv[1]                    = {ObjectIdGetDatum(dbid)};
+	bool  connected_in_this_function = SPI_connect_if_not_yet();
 
 	ret = SPI_execute_with_args("select * from diskquota_namespace.database_list where dbid = $1", 1, argt, argv, NULL,
 	                            true, 0);
@@ -1391,7 +1363,7 @@ add_dbid_to_database_list(Oid dbid)
 		ereport(WARNING, (errmsg("[diskquota launcher] database id %d is already actived, "
 		                         "skip database_list update",
 		                         dbid)));
-		return;
+		goto ret;
 	}
 
 	ret = SPI_execute_with_args("insert into diskquota_namespace.database_list values($1)", 1, argt, argv, NULL, false,
@@ -1405,7 +1377,8 @@ add_dbid_to_database_list(Oid dbid)
 		                       ret, strerror(saved_errno))));
 	}
 
-	return;
+ret:
+	SPI_finish_if(connected_in_this_function);
 }
 
 /*
@@ -1415,23 +1388,25 @@ add_dbid_to_database_list(Oid dbid)
 static void
 del_dbid_from_database_list(Oid dbid)
 {
-	int ret;
+	bool connected_in_this_function = SPI_connect_if_not_yet();
 
 	/* errors will be cached in outer function */
-	ret = SPI_execute_with_args("delete from diskquota_namespace.database_list where dbid = $1", 1,
-	                            (Oid[]){
-	                                    OIDOID,
-	                            },
-	                            (Datum[]){
-	                                    ObjectIdGetDatum(dbid),
-	                            },
-	                            NULL, false, 0);
+	int ret = SPI_execute_with_args("delete from diskquota_namespace.database_list where dbid = $1", 1,
+	                                (Oid[]){
+	                                        OIDOID,
+	                                },
+	                                (Datum[]){
+	                                        ObjectIdGetDatum(dbid),
+	                                },
+	                                NULL, false, 0);
 	if (ret != SPI_OK_DELETE)
 	{
 		int saved_errno = errno;
 		ereport(ERROR, (errmsg("[diskquota launcher] del_dbid_from_database_list: reason: %s, ret_code: %d.",
 		                       strerror(saved_errno), ret)));
 	}
+
+	SPI_finish_if(connected_in_this_function);
 }
 
 /*
@@ -1625,10 +1600,8 @@ static const char *
 diskquota_status_schema_version()
 {
 	static char ret_version[64];
-	int         ret = SPI_connect();
-	Assert(ret = SPI_OK_CONNECT);
-
-	ret = SPI_execute("select extversion from pg_extension where extname = 'diskquota'", true, 0);
+	bool        connected_in_this_function = SPI_connect_if_not_yet();
+	int         ret = SPI_execute("select extversion from pg_extension where extname = 'diskquota'", true, 0);
 
 	if (ret != SPI_OK_SELECT || SPI_processed != 1)
 	{
@@ -1655,11 +1628,11 @@ diskquota_status_schema_version()
 
 	StrNCpy(ret_version, version, sizeof(ret_version) - 1);
 
-	SPI_finish();
+	SPI_finish_if(connected_in_this_function);
 	return ret_version;
 
 fail:
-	SPI_finish();
+	SPI_finish_if(connected_in_this_function);
 	return "";
 }
 

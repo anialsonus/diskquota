@@ -671,10 +671,9 @@ vacuum_disk_quota_model(uint32 id)
  * Check whether the diskquota state is ready
  */
 bool
-check_diskquota_state_is_ready()
+check_diskquota_state_is_ready(void)
 {
 	bool is_ready           = false;
-	bool connected          = false;
 	bool pushed_active_snap = false;
 	bool ret                = true;
 
@@ -687,12 +686,6 @@ check_diskquota_state_is_ready()
 	 */
 	PG_TRY();
 	{
-		if (SPI_OK_CONNECT != SPI_connect())
-		{
-			ereport(ERROR,
-			        (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] unable to connect to execute SPI query")));
-		}
-		connected = true;
 		PushActiveSnapshot(GetTransactionSnapshot());
 		pushed_active_snap = true;
 		is_ready           = do_check_diskquota_state_is_ready();
@@ -708,7 +701,6 @@ check_diskquota_state_is_ready()
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	if (connected) SPI_finish();
 	if (pushed_active_snap) PopActiveSnapshot();
 	if (ret)
 		CommitTransactionCommand();
@@ -732,7 +724,8 @@ do_check_diskquota_state_is_ready(void)
 {
 	int       ret;
 	TupleDesc tupdesc;
-	ret = SPI_execute("select state from diskquota.state", true, 0);
+	bool      connected_in_this_function = SPI_connect_if_not_yet();
+	ret                                  = SPI_execute("select state from diskquota.state", true, 0);
 	ereportif(ret != SPI_OK_SELECT, ERROR,
 	          (errcode(ERRCODE_INTERNAL_ERROR),
 	           errmsg("[diskquota] check diskquota state SPI_execute failed: error code %d", ret)));
@@ -758,6 +751,8 @@ do_check_diskquota_state_is_ready(void)
 	dat           = SPI_getbinval(tup, tupdesc, 1, &isnull);
 	state         = isnull ? DISKQUOTA_UNKNOWN_STATE : DatumGetInt32(dat);
 	bool is_ready = state == DISKQUOTA_READY_STATE;
+
+	SPI_finish_if(connected_in_this_function);
 
 	if (!is_ready && !diskquota_is_readiness_logged())
 	{
@@ -800,7 +795,6 @@ refresh_disk_quota_model(bool is_init)
 static void
 refresh_disk_quota_usage(bool is_init)
 {
-	bool  connected                   = false;
 	bool  pushed_active_snap          = false;
 	bool  ret                         = true;
 	HTAB *local_active_table_stat_map = NULL;
@@ -814,12 +808,6 @@ refresh_disk_quota_usage(bool is_init)
 	 */
 	PG_TRY();
 	{
-		if (SPI_OK_CONNECT != SPI_connect())
-		{
-			ereport(ERROR,
-			        (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] unable to connect to execute SPI query")));
-		}
-		connected = true;
 		PushActiveSnapshot(GetTransactionSnapshot());
 		pushed_active_snap = true;
 		/*
@@ -861,7 +849,6 @@ refresh_disk_quota_usage(bool is_init)
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	if (connected) SPI_finish();
 	if (pushed_active_snap) PopActiveSnapshot();
 	if (ret)
 		CommitTransactionCommand();
@@ -1153,7 +1140,6 @@ static void
 delete_from_table_size_map(char *str)
 {
 	StringInfoData delete_statement;
-	int            ret;
 
 	initStringInfo(&delete_statement);
 	appendStringInfo(&delete_statement,
@@ -1161,10 +1147,12 @@ delete_from_table_size_map(char *str)
 	                 "delete from diskquota.table_size "
 	                 "where (tableid, segid) in ( SELECT * FROM deleted_table );",
 	                 str);
-	ret = SPI_execute(delete_statement.data, false, 0);
+	bool connected_in_this_function = SPI_connect_if_not_yet();
+	int  ret                        = SPI_execute(delete_statement.data, false, 0);
 	if (ret != SPI_OK_DELETE)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
+	SPI_finish_if(connected_in_this_function);
 	pfree(delete_statement.data);
 }
 
@@ -1172,14 +1160,15 @@ static void
 insert_into_table_size_map(char *str)
 {
 	StringInfoData insert_statement;
-	int            ret;
 
 	initStringInfo(&insert_statement);
 	appendStringInfo(&insert_statement, "insert into diskquota.table_size values %s;", str);
-	ret = SPI_execute(insert_statement.data, false, 0);
+	bool connected_in_this_function = SPI_connect_if_not_yet();
+	int  ret                        = SPI_execute(insert_statement.data, false, 0);
 	if (ret != SPI_OK_INSERT)
 		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
 		                errmsg("[diskquota] insert_into_table_size_map SPI_execute failed: error code %d", ret)));
+	SPI_finish_if(connected_in_this_function);
 	pfree(insert_statement.data);
 }
 
@@ -1413,7 +1402,6 @@ truncateStringInfo(StringInfo str, int nchars)
 static bool
 load_quotas(void)
 {
-	bool connected          = false;
 	bool pushed_active_snap = false;
 	bool ret                = true;
 
@@ -1426,13 +1414,6 @@ load_quotas(void)
 	 */
 	PG_TRY();
 	{
-		int ret_code = SPI_connect();
-		if (ret_code != SPI_OK_CONNECT)
-		{
-			ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-			                errmsg("[diskquota] unable to connect to execute SPI query, return code: %d", ret_code)));
-		}
-		connected = true;
 		PushActiveSnapshot(GetTransactionSnapshot());
 		pushed_active_snap = true;
 		do_load_quotas();
@@ -1448,7 +1429,6 @@ load_quotas(void)
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	if (connected) SPI_finish();
 	if (pushed_active_snap) PopActiveSnapshot();
 	if (ret)
 		CommitTransactionCommand();
@@ -1475,6 +1455,7 @@ do_load_quotas(void)
 	 */
 	clean_all_quota_limit();
 
+	bool connected_in_this_function = SPI_connect_if_not_yet();
 	/*
 	 * read quotas from diskquota.quota_config and target table
 	 */
@@ -1556,7 +1537,7 @@ do_load_quotas(void)
 		}
 	}
 
-	return;
+	SPI_finish_if(connected_in_this_function);
 }
 
 /*
@@ -2301,7 +2282,9 @@ update_monitor_db_mpp(Oid dbid, FetchTableStatType action, const char *schema)
 	                 "SELECT %s.diskquota_fetch_table_stat(%d, '{%d}'::oid[]) FROM gp_dist_random('gp_id')", schema,
 	                 action, dbid);
 	/* Add current database to the monitored db cache on all segments */
-	int ret = SPI_execute(sql_command.data, true, 0);
+	bool connected_in_this_function = SPI_connect_if_not_yet();
+	int  ret                        = SPI_execute(sql_command.data, true, 0);
+	SPI_finish_if(connected_in_this_function);
 	pfree(sql_command.data);
 
 	ereportif(ret != SPI_OK_SELECT, ERROR,
