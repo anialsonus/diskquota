@@ -1692,7 +1692,7 @@ check_hash_fullness(HTAB *hashp, int max_size, const char *warning_message, Time
 bool
 SPI_connect_if_not_yet(void)
 {
-	if (SPI_context()) return false;
+	bool pushed = SPI_push_conditional();
 
 	int rc = SPI_connect();
 
@@ -1700,17 +1700,19 @@ SPI_connect_if_not_yet(void)
 	          (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_connect failed"),
 	           errdetail("%s", SPI_result_code_string(rc))));
 
-	return true;
+	return pushed;
 }
 
 void
-SPI_finish_if(bool connected_in_calling_function)
+SPI_finish_if(bool pushed)
 {
-	if (!connected_in_calling_function || !SPI_context()) return;
+	if (!SPI_context()) SPI_restore_connection();
 
 	int rc = SPI_finish();
 
 	ereportif(rc != SPI_OK_FINISH, ERROR,
 	          (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_finish failed"),
 	           errdetail("%s", SPI_result_code_string(rc))));
+
+	SPI_pop_conditional(pushed);
 }
