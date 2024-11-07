@@ -240,6 +240,7 @@ static void reset_table_size_entry_flag(TableSizeEntry *entry, TableSizeEntryFla
 static void set_table_size_entry_flag(TableSizeEntry *entry, TableSizeEntryFlag flag);
 
 static void delete_from_table_size_map(ArrayBuildState *tableids, ArrayBuildState *segids);
+static void update_table_size_map(ArrayBuildState *tableids, ArrayBuildState *sizes, ArrayBuildState *segids);
 
 /* add a new entry quota or update the old entry quota */
 static void
