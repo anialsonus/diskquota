@@ -673,9 +673,9 @@ vacuum_disk_quota_model(uint32 id)
 bool
 check_diskquota_state_is_ready(void)
 {
-	bool is_ready           = false;
-	bool pushed_active_snap = false;
-	bool ret                = true;
+	volatile bool is_ready           = false;
+	volatile bool pushed_active_snap = false;
+	volatile bool ret                = true;
 
 	StartTransactionCommand();
 
@@ -795,9 +795,9 @@ refresh_disk_quota_model(bool is_init)
 static void
 refresh_disk_quota_usage(bool is_init)
 {
-	bool  pushed_active_snap          = false;
-	bool  ret                         = true;
-	HTAB *local_active_table_stat_map = NULL;
+	volatile bool pushed_active_snap           = false;
+	volatile bool ret                          = true;
+	HTAB *volatile local_active_table_stat_map = NULL;
 
 	StartTransactionCommand();
 
@@ -836,7 +836,6 @@ refresh_disk_quota_usage(bool is_init)
 		 */
 		if (is_init || (diskquota_hardlimit && (reject_map_changed || hasActiveTable)))
 			dispatch_rejectmap(local_active_table_stat_map);
-		hash_destroy(local_active_table_stat_map);
 	}
 	PG_CATCH();
 	{
@@ -849,6 +848,7 @@ refresh_disk_quota_usage(bool is_init)
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
+	if (local_active_table_stat_map) hash_destroy(local_active_table_stat_map);
 	if (pushed_active_snap) PopActiveSnapshot();
 	if (ret)
 		CommitTransactionCommand();
@@ -1402,8 +1402,8 @@ truncateStringInfo(StringInfo str, int nchars)
 static bool
 load_quotas(void)
 {
-	bool pushed_active_snap = false;
-	bool ret                = true;
+	volatile bool pushed_active_snap = false;
+	volatile bool ret                = true;
 
 	StartTransactionCommand();
 

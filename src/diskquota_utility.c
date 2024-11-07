@@ -1430,9 +1430,9 @@ relation_size_local(PG_FUNCTION_ARGS)
 Relation
 diskquota_relation_open(Oid relid)
 {
-	Relation rel;
-	bool     success_open               = false;
-	int32    SavedInterruptHoldoffCount = InterruptHoldoffCount;
+	volatile Relation rel;
+	volatile bool     success_open               = false;
+	int32             SavedInterruptHoldoffCount = InterruptHoldoffCount;
 
 	PG_TRY();
 	{

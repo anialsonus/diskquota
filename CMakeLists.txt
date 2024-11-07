@@ -35,7 +35,7 @@ if (APPLE)
     set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -bundle_loader ${PG_BIN_DIR}/postgres")
 endif()
 # set c and ld flags for all projects
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${PG_C_FLAGS}")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wclobbered ${PG_C_FLAGS}")
 
 # generate version
 if(NOT DEFINED DISKQUOTA_VERSION)
