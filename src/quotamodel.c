@@ -239,8 +239,21 @@ static bool get_table_size_entry_flag(TableSizeEntry *entry, TableSizeEntryFlag 
 static void reset_table_size_entry_flag(TableSizeEntry *entry, TableSizeEntryFlag flag);
 static void set_table_size_entry_flag(TableSizeEntry *entry, TableSizeEntryFlag flag);
 
-static void delete_from_table_size_map(ArrayBuildState *tableids, ArrayBuildState *segids);
-static void update_table_size_map(ArrayBuildState *tableids, ArrayBuildState *sizes, ArrayBuildState *segids);
+typedef struct
+{
+	ArrayBuildState *tableids;
+	ArrayBuildState *segids;
+} DeleteArrays;
+
+typedef struct
+{
+	ArrayBuildState *tableids;
+	ArrayBuildState *sizes;
+	ArrayBuildState *segids;
+} UpdateArrays;
+
+static void delete_from_table_size_map(DeleteArrays *arrays);
+static void update_table_size_map(UpdateArrays *arrays);
 
 /* add a new entry quota or update the old entry quota */
 static void
@@ -910,7 +923,7 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 	TableSizeEntryKey         key;
 	List                     *oidlist;
 	ListCell                 *l;
-	ArrayBuildState          *tableids = NULL, *segids = NULL;
+	DeleteArrays delete = {0};
 
 	/*
 	 * unset is_exist flag for tsentry in table_size_map this is used to
@@ -966,16 +979,12 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 
 				for (int i = -1; i < SEGCOUNT; i++)
 				{
-					tableids =
-					        accumArrayResult(tableids, ObjectIdGetDatum(relOid), false, OIDOID, CurrentMemoryContext);
-					segids = accumArrayResult(segids, Int16GetDatum(i), false, INT2OID, CurrentMemoryContext);
+					delete.tableids = accumArrayResult(delete.tableids, ObjectIdGetDatum(relOid), false, OIDOID,
+					                                   CurrentMemoryContext);
+					delete.segids =
+					        accumArrayResult(delete.segids, Int16GetDatum(i), false, INT2OID, CurrentMemoryContext);
 
-					if (tableids->nelems > SQL_MAX_VALUES_NUMBER)
-					{
-						delete_from_table_size_map(tableids, segids);
-						tableids = NULL;
-						segids   = NULL;
-					}
+					if (delete.tableids->nelems > SQL_MAX_VALUES_NUMBER) delete_from_table_size_map(&delete);
 				}
 
 				continue;
@@ -1104,7 +1113,7 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 		}
 	}
 
-	if (tableids) delete_from_table_size_map(tableids, segids);
+	if (delete.tableids) delete_from_table_size_map(&delete);
 
 	list_free(oidlist);
 
@@ -1134,10 +1143,10 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 }
 
 static void
-delete_from_table_size_map(ArrayBuildState *tableids, ArrayBuildState *segids)
+delete_from_table_size_map(DeleteArrays *arrays)
 {
-	Datum tableid                    = makeArrayResult(tableids, CurrentMemoryContext);
-	Datum segid                      = makeArrayResult(segids, CurrentMemoryContext);
+	Datum tableid                    = makeArrayResult(arrays->tableids, CurrentMemoryContext);
+	Datum segid                      = makeArrayResult(arrays->segids, CurrentMemoryContext);
 	bool  connected_in_this_function = SPI_connect_if_not_yet();
 	int   ret                        = SPI_execute_with_args(
 	                                 "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
@@ -1148,14 +1157,16 @@ delete_from_table_size_map(ArrayBuildState *tableids, ArrayBuildState *segids)
 	SPI_finish_if(connected_in_this_function);
 	pfree(DatumGetPointer(tableid));
 	pfree(DatumGetPointer(segid));
+	arrays->tableids = NULL;
+	arrays->segids   = NULL;
 }
 
 static void
-update_table_size_map(ArrayBuildState *tableids, ArrayBuildState *sizes, ArrayBuildState *segids)
+update_table_size_map(UpdateArrays *arrays)
 {
-	Datum tableid                    = makeArrayResult(tableids, CurrentMemoryContext);
-	Datum size                       = makeArrayResult(sizes, CurrentMemoryContext);
-	Datum segid                      = makeArrayResult(segids, CurrentMemoryContext);
+	Datum tableid                    = makeArrayResult(arrays->tableids, CurrentMemoryContext);
+	Datum size                       = makeArrayResult(arrays->sizes, CurrentMemoryContext);
+	Datum segid                      = makeArrayResult(arrays->segids, CurrentMemoryContext);
 	bool  connected_in_this_function = SPI_connect_if_not_yet();
 	int   ret                        = SPI_execute_with_args(
 	                                 "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
@@ -1175,6 +1186,9 @@ update_table_size_map(ArrayBuildState *tableids, ArrayBuildState *sizes, ArrayBu
 	pfree(DatumGetPointer(tableid));
 	pfree(DatumGetPointer(size));
 	pfree(DatumGetPointer(segid));
+	arrays->tableids = NULL;
+	arrays->sizes    = NULL;
+	arrays->segids   = NULL;
 }
 
 /*
@@ -1188,17 +1202,8 @@ flush_to_table_size(void)
 {
 	HASH_SEQ_STATUS iter;
 	TableSizeEntry *tsentry = NULL;
-	struct
-	{
-		ArrayBuildState *tableids;
-		ArrayBuildState *segids;
-	} delete = {0};
-	struct
-	{
-		ArrayBuildState *tableids;
-		ArrayBuildState *sizes;
-		ArrayBuildState *segids;
-	} update = {0};
+	DeleteArrays delete     = {0};
+	UpdateArrays update     = {0};
 
 	/* TODO: Add flush_size_interval to avoid flushing size info in every loop */
 
@@ -1220,12 +1225,7 @@ flush_to_table_size(void)
 				                                   OIDOID, CurrentMemoryContext);
 				delete.segids = accumArrayResult(delete.segids, Int16GetDatum(i), false, INT2OID, CurrentMemoryContext);
 
-				if (delete.tableids->nelems > SQL_MAX_VALUES_NUMBER)
-				{
-					delete_from_table_size_map(delete.tableids, delete.segids);
-					delete.tableids = NULL;
-					delete.segids   = NULL;
-				}
+				if (delete.tableids->nelems > SQL_MAX_VALUES_NUMBER) delete_from_table_size_map(&delete);
 			}
 			/* update the table size by delete+insert in table table_size */
 			else if (TableSizeEntryGetFlushFlag(tsentry, i))
@@ -1236,13 +1236,7 @@ flush_to_table_size(void)
 				                                 INT8OID, CurrentMemoryContext);
 				update.segids = accumArrayResult(update.segids, Int16GetDatum(i), false, INT2OID, CurrentMemoryContext);
 
-				if (update.tableids->nelems > SQL_MAX_VALUES_NUMBER)
-				{
-					update_table_size_map(update.tableids, update.sizes, update.segids);
-					update.tableids = NULL;
-					update.sizes    = NULL;
-					update.segids   = NULL;
-				}
+				if (update.tableids->nelems > SQL_MAX_VALUES_NUMBER) update_table_size_map(&update);
 
 				TableSizeEntryResetFlushFlag(tsentry, i);
 			}
@@ -1253,8 +1247,8 @@ flush_to_table_size(void)
 		}
 	}
 
-	if (delete.tableids) delete_from_table_size_map(delete.tableids, delete.segids);
-	if (update.tableids) update_table_size_map(update.tableids, update.sizes, update.segids);
+	if (delete.tableids) delete_from_table_size_map(&delete);
+	if (update.tableids) update_table_size_map(&update);
 
 	optimizer = old_optimizer;
 }
