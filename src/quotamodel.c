@@ -984,7 +984,10 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 					delete.segids =
 					        accumArrayResult(delete.segids, Int16GetDatum(i), false, INT2OID, CurrentMemoryContext);
 
-					if (delete.tableids->nelems > SQL_MAX_VALUES_NUMBER) delete_from_table_size_map(&delete);
+					if (delete.tableids->nelems > SQL_MAX_VALUES_NUMBER)
+					{
+						delete_from_table_size_map(&delete);
+					}
 				}
 
 				continue;
@@ -1113,7 +1116,10 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 		}
 	}
 
-	if (delete.tableids) delete_from_table_size_map(&delete);
+	if (delete.tableids)
+	{
+		delete_from_table_size_map(&delete);
+	}
 
 	list_free(oidlist);
 
@@ -1151,9 +1157,9 @@ delete_from_table_size_map(DeleteArrays *arrays)
 	int   ret                        = SPI_execute_with_args(
 	                                 "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
 	                                 (Oid[]){OIDARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, segid}, NULL, false, 0);
-	if (ret != SPI_OK_DELETE)
-		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-		                errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
+	ereportif(ret != SPI_OK_DELETE, ERROR,
+	          (errcode(ERRCODE_INTERNAL_ERROR),
+	           errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
 	SPI_finish_if(connected_in_this_function);
 	pfree(DatumGetPointer(tableid));
 	pfree(DatumGetPointer(segid));
@@ -1171,17 +1177,17 @@ update_table_size_map(UpdateArrays *arrays)
 	int   ret                        = SPI_execute_with_args(
 	                                 "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
 	                                 (Oid[]){OIDARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, segid}, NULL, false, 0);
-	if (ret != SPI_OK_DELETE)
-		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-		                errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
+	ereportif(ret != SPI_OK_DELETE, ERROR,
+	          (errcode(ERRCODE_INTERNAL_ERROR),
+	           errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
 	SPI_finish_if(connected_in_this_function);
 	connected_in_this_function = SPI_connect_if_not_yet();
 	ret = SPI_execute_with_args("insert into diskquota.table_size select * from unnest($1, $2, $3)", 3,
 	                            (Oid[]){OIDARRAYOID, INT8ARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, size, segid}, NULL,
 	                            false, 0);
-	if (ret != SPI_OK_INSERT)
-		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-		                errmsg("[diskquota] insert_into_table_size_map SPI_execute failed: error code %d", ret)));
+	ereportif(ret != SPI_OK_INSERT, ERROR,
+	          (errcode(ERRCODE_INTERNAL_ERROR),
+	           errmsg("[diskquota] insert_into_table_size_map SPI_execute failed: error code %d", ret)));
 	SPI_finish_if(connected_in_this_function);
 	pfree(DatumGetPointer(tableid));
 	pfree(DatumGetPointer(size));
@@ -1225,7 +1231,10 @@ flush_to_table_size(void)
 				                                   OIDOID, CurrentMemoryContext);
 				delete.segids = accumArrayResult(delete.segids, Int16GetDatum(i), false, INT2OID, CurrentMemoryContext);
 
-				if (delete.tableids->nelems > SQL_MAX_VALUES_NUMBER) delete_from_table_size_map(&delete);
+				if (delete.tableids->nelems > SQL_MAX_VALUES_NUMBER)
+				{
+					delete_from_table_size_map(&delete);
+				}
 			}
 			/* update the table size by delete+insert in table table_size */
 			else if (TableSizeEntryGetFlushFlag(tsentry, i))
@@ -1236,7 +1245,10 @@ flush_to_table_size(void)
 				                                 INT8OID, CurrentMemoryContext);
 				update.segids = accumArrayResult(update.segids, Int16GetDatum(i), false, INT2OID, CurrentMemoryContext);
 
-				if (update.tableids->nelems > SQL_MAX_VALUES_NUMBER) update_table_size_map(&update);
+				if (update.tableids->nelems > SQL_MAX_VALUES_NUMBER)
+				{
+					update_table_size_map(&update);
+				}
 
 				TableSizeEntryResetFlushFlag(tsentry, i);
 			}
@@ -1247,8 +1259,14 @@ flush_to_table_size(void)
 		}
 	}
 
-	if (delete.tableids) delete_from_table_size_map(&delete);
-	if (update.tableids) update_table_size_map(&update);
+	if (delete.tableids)
+	{
+		delete_from_table_size_map(&delete);
+	}
+	if (update.tableids)
+	{
+		update_table_size_map(&update);
+	}
 
 	optimizer = old_optimizer;
 }
