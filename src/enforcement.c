@@ -44,7 +44,7 @@ init_disk_quota_enforcement(void)
 static bool
 quota_check_ExecCheckRTPerms(List *rangeTable, bool ereport_on_violation)
 {
-	ListCell *l;
+	ListCell *volatile l;
 
 	foreach (l, rangeTable)
 	{
