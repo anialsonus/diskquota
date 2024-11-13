@@ -239,7 +239,21 @@ static bool get_table_size_entry_flag(TableSizeEntry *entry, TableSizeEntryFlag 
 static void reset_table_size_entry_flag(TableSizeEntry *entry, TableSizeEntryFlag flag);
 static void set_table_size_entry_flag(TableSizeEntry *entry, TableSizeEntryFlag flag);
 
-static void delete_from_table_size_map(char *str);
+typedef struct
+{
+	ArrayBuildState *tableids;
+	ArrayBuildState *segids;
+} DeleteArrays;
+
+typedef struct
+{
+	ArrayBuildState *tableids;
+	ArrayBuildState *sizes;
+	ArrayBuildState *segids;
+} UpdateArrays;
+
+static void delete_from_table_size_map(DeleteArrays *arrays);
+static void update_table_size_map(UpdateArrays *arrays);
 
 /* add a new entry quota or update the old entry quota */
 static void
@@ -673,9 +687,9 @@ vacuum_disk_quota_model(uint32 id)
 bool
 check_diskquota_state_is_ready(void)
 {
-	bool is_ready           = false;
-	bool pushed_active_snap = false;
-	bool ret                = true;
+	volatile bool is_ready           = false;
+	volatile bool pushed_active_snap = false;
+	volatile bool ret                = true;
 
 	StartTransactionCommand();
 
@@ -795,9 +809,9 @@ refresh_disk_quota_model(bool is_init)
 static void
 refresh_disk_quota_usage(bool is_init)
 {
-	bool  pushed_active_snap          = false;
-	bool  ret                         = true;
-	HTAB *local_active_table_stat_map = NULL;
+	volatile bool pushed_active_snap           = false;
+	volatile bool ret                          = true;
+	HTAB *volatile local_active_table_stat_map = NULL;
 
 	StartTransactionCommand();
 
@@ -836,7 +850,6 @@ refresh_disk_quota_usage(bool is_init)
 		 */
 		if (is_init || (diskquota_hardlimit && (reject_map_changed || hasActiveTable)))
 			dispatch_rejectmap(local_active_table_stat_map);
-		hash_destroy(local_active_table_stat_map);
 	}
 	PG_CATCH();
 	{
@@ -849,6 +862,7 @@ refresh_disk_quota_usage(bool is_init)
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
+	if (local_active_table_stat_map) hash_destroy(local_active_table_stat_map);
 	if (pushed_active_snap) PopActiveSnapshot();
 	if (ret)
 		CommitTransactionCommand();
@@ -909,10 +923,7 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 	TableSizeEntryKey         key;
 	List                     *oidlist;
 	ListCell                 *l;
-	int                       delete_entries_num = 0;
-	StringInfoData            delete_statement;
-
-	initStringInfo(&delete_statement);
+	DeleteArrays delete = {0};
 
 	/*
 	 * unset is_exist flag for tsentry in table_size_map this is used to
@@ -968,15 +979,14 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 
 				for (int i = -1; i < SEGCOUNT; i++)
 				{
-					appendStringInfo(&delete_statement, "%s(%u,%d)", (delete_entries_num == 0) ? " " : ", ", relOid, i);
+					delete.tableids = accumArrayResult(delete.tableids, ObjectIdGetDatum(relOid), false, OIDOID,
+					                                   CurrentMemoryContext);
+					delete.segids =
+					        accumArrayResult(delete.segids, Int16GetDatum(i), false, INT2OID, CurrentMemoryContext);
 
-					delete_entries_num++;
-
-					if (delete_entries_num > SQL_MAX_VALUES_NUMBER)
+					if (delete.tableids->nelems > SQL_MAX_VALUES_NUMBER)
 					{
-						delete_from_table_size_map(delete_statement.data);
-						resetStringInfo(&delete_statement);
-						delete_entries_num = 0;
+						delete_from_table_size_map(&delete);
 					}
 				}
 
@@ -1106,9 +1116,11 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 		}
 	}
 
-	if (delete_entries_num) delete_from_table_size_map(delete_statement.data);
+	if (delete.tableids)
+	{
+		delete_from_table_size_map(&delete);
+	}
 
-	pfree(delete_statement.data);
 	list_free(oidlist);
 
 	/*
@@ -1137,39 +1149,52 @@ calculate_table_disk_usage(bool is_init, HTAB *local_active_table_stat_map)
 }
 
 static void
-delete_from_table_size_map(char *str)
+delete_from_table_size_map(DeleteArrays *arrays)
 {
-	StringInfoData delete_statement;
-
-	initStringInfo(&delete_statement);
-	appendStringInfo(&delete_statement,
-	                 "WITH deleted_table AS ( VALUES %s ) "
-	                 "delete from diskquota.table_size "
-	                 "where (tableid, segid) in ( SELECT * FROM deleted_table );",
-	                 str);
-	bool connected_in_this_function = SPI_connect_if_not_yet();
-	int  ret                        = SPI_execute(delete_statement.data, false, 0);
-	if (ret != SPI_OK_DELETE)
-		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-		                errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
+	Datum tableid                    = makeArrayResult(arrays->tableids, CurrentMemoryContext);
+	Datum segid                      = makeArrayResult(arrays->segids, CurrentMemoryContext);
+	bool  connected_in_this_function = SPI_connect_if_not_yet();
+	int   ret                        = SPI_execute_with_args(
+	                                 "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
+	                                 (Oid[]){OIDARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, segid}, NULL, false, 0);
+	ereportif(ret != SPI_OK_DELETE, ERROR,
+	          (errcode(ERRCODE_INTERNAL_ERROR),
+	           errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
 	SPI_finish_if(connected_in_this_function);
-	pfree(delete_statement.data);
+	pfree(DatumGetPointer(tableid));
+	pfree(DatumGetPointer(segid));
+	arrays->tableids = NULL;
+	arrays->segids   = NULL;
 }
 
 static void
-insert_into_table_size_map(char *str)
+update_table_size_map(UpdateArrays *arrays)
 {
-	StringInfoData insert_statement;
-
-	initStringInfo(&insert_statement);
-	appendStringInfo(&insert_statement, "insert into diskquota.table_size values %s;", str);
-	bool connected_in_this_function = SPI_connect_if_not_yet();
-	int  ret                        = SPI_execute(insert_statement.data, false, 0);
-	if (ret != SPI_OK_INSERT)
-		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-		                errmsg("[diskquota] insert_into_table_size_map SPI_execute failed: error code %d", ret)));
+	Datum tableid                    = makeArrayResult(arrays->tableids, CurrentMemoryContext);
+	Datum size                       = makeArrayResult(arrays->sizes, CurrentMemoryContext);
+	Datum segid                      = makeArrayResult(arrays->segids, CurrentMemoryContext);
+	bool  connected_in_this_function = SPI_connect_if_not_yet();
+	int   ret                        = SPI_execute_with_args(
+	                                 "delete from diskquota.table_size where (tableid, segid) in (select * from unnest($1, $2))", 2,
+	                                 (Oid[]){OIDARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, segid}, NULL, false, 0);
+	ereportif(ret != SPI_OK_DELETE, ERROR,
+	          (errcode(ERRCODE_INTERNAL_ERROR),
+	           errmsg("[diskquota] delete_from_table_size_map SPI_execute failed: error code %d", ret)));
 	SPI_finish_if(connected_in_this_function);
-	pfree(insert_statement.data);
+	connected_in_this_function = SPI_connect_if_not_yet();
+	ret = SPI_execute_with_args("insert into diskquota.table_size select * from unnest($1, $2, $3)", 3,
+	                            (Oid[]){OIDARRAYOID, INT8ARRAYOID, INT2ARRAYOID}, (Datum[]){tableid, size, segid}, NULL,
+	                            false, 0);
+	ereportif(ret != SPI_OK_INSERT, ERROR,
+	          (errcode(ERRCODE_INTERNAL_ERROR),
+	           errmsg("[diskquota] insert_into_table_size_map SPI_execute failed: error code %d", ret)));
+	SPI_finish_if(connected_in_this_function);
+	pfree(DatumGetPointer(tableid));
+	pfree(DatumGetPointer(size));
+	pfree(DatumGetPointer(segid));
+	arrays->tableids = NULL;
+	arrays->sizes    = NULL;
+	arrays->segids   = NULL;
 }
 
 /*
@@ -1183,19 +1208,14 @@ flush_to_table_size(void)
 {
 	HASH_SEQ_STATUS iter;
 	TableSizeEntry *tsentry = NULL;
-	StringInfoData  delete_statement;
-	StringInfoData  insert_statement;
-	int             delete_entries_num = 0;
-	int             insert_entries_num = 0;
+	DeleteArrays delete     = {0};
+	UpdateArrays update     = {0};
 
 	/* TODO: Add flush_size_interval to avoid flushing size info in every loop */
 
 	/* Disable ORCA since it does not support non-scalar subqueries. */
 	bool old_optimizer = optimizer;
 	optimizer          = false;
-
-	initStringInfo(&insert_statement);
-	initStringInfo(&delete_statement);
 
 	hash_seq_init(&iter, table_size_map);
 	while ((tsentry = hash_seq_search(&iter)) != NULL)
@@ -1207,37 +1227,27 @@ flush_to_table_size(void)
 			/* delete dropped table from both table_size_map and table table_size */
 			if (!get_table_size_entry_flag(tsentry, TABLE_EXIST))
 			{
-				appendStringInfo(&delete_statement, "%s(%u,%d)", (delete_entries_num == 0) ? " " : ", ",
-				                 tsentry->key.reloid, i);
-				delete_entries_num++;
-				if (delete_entries_num > SQL_MAX_VALUES_NUMBER)
+				delete.tableids = accumArrayResult(delete.tableids, ObjectIdGetDatum(tsentry->key.reloid), false,
+				                                   OIDOID, CurrentMemoryContext);
+				delete.segids = accumArrayResult(delete.segids, Int16GetDatum(i), false, INT2OID, CurrentMemoryContext);
+
+				if (delete.tableids->nelems > SQL_MAX_VALUES_NUMBER)
 				{
-					delete_from_table_size_map(delete_statement.data);
-					resetStringInfo(&delete_statement);
-					delete_entries_num = 0;
+					delete_from_table_size_map(&delete);
 				}
 			}
 			/* update the table size by delete+insert in table table_size */
 			else if (TableSizeEntryGetFlushFlag(tsentry, i))
 			{
-				appendStringInfo(&delete_statement, "%s(%u,%d)", (delete_entries_num == 0) ? " " : ", ",
-				                 tsentry->key.reloid, i);
-				appendStringInfo(&insert_statement, "%s(%u,%ld,%d)", (insert_entries_num == 0) ? " " : ", ",
-				                 tsentry->key.reloid, TableSizeEntryGetSize(tsentry, i), i);
-				delete_entries_num++;
-				insert_entries_num++;
+				update.tableids = accumArrayResult(update.tableids, ObjectIdGetDatum(tsentry->key.reloid), false,
+				                                   OIDOID, CurrentMemoryContext);
+				update.sizes  = accumArrayResult(update.sizes, Int64GetDatum(TableSizeEntryGetSize(tsentry, i)), false,
+				                                 INT8OID, CurrentMemoryContext);
+				update.segids = accumArrayResult(update.segids, Int16GetDatum(i), false, INT2OID, CurrentMemoryContext);
 
-				if (delete_entries_num > SQL_MAX_VALUES_NUMBER)
+				if (update.tableids->nelems > SQL_MAX_VALUES_NUMBER)
 				{
-					delete_from_table_size_map(delete_statement.data);
-					resetStringInfo(&delete_statement);
-					delete_entries_num = 0;
-				}
-				if (insert_entries_num > SQL_MAX_VALUES_NUMBER)
-				{
-					insert_into_table_size_map(insert_statement.data);
-					resetStringInfo(&insert_statement);
-					insert_entries_num = 0;
+					update_table_size_map(&update);
 				}
 
 				TableSizeEntryResetFlushFlag(tsentry, i);
@@ -1249,13 +1259,16 @@ flush_to_table_size(void)
 		}
 	}
 
-	if (delete_entries_num) delete_from_table_size_map(delete_statement.data);
-	if (insert_entries_num) insert_into_table_size_map(insert_statement.data);
+	if (delete.tableids)
+	{
+		delete_from_table_size_map(&delete);
+	}
+	if (update.tableids)
+	{
+		update_table_size_map(&update);
+	}
 
 	optimizer = old_optimizer;
-
-	pfree(delete_statement.data);
-	pfree(insert_statement.data);
 }
 
 /*
@@ -1402,8 +1415,8 @@ truncateStringInfo(StringInfo str, int nchars)
 static bool
 load_quotas(void)
 {
-	bool pushed_active_snap = false;
-	bool ret                = true;
+	volatile bool pushed_active_snap = false;
+	volatile bool ret                = true;
 
 	StartTransactionCommand();
 
