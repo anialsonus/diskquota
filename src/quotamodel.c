@@ -809,8 +809,8 @@ refresh_disk_quota_model(bool is_init)
 static void
 refresh_disk_quota_usage(bool is_init)
 {
-	volatile bool pushed_active_snap           = false;
-	volatile bool ret                          = true;
+	volatile bool pushed_active_snap = false;
+	volatile bool ret                = true;
 
 	StartTransactionCommand();
 
@@ -891,14 +891,14 @@ calculate_table_disk_usage(StringInfo active_oids, bool is_init)
 	HASH_SEQ_STATUS   iter;
 	TableSizeEntryKey key;
 	DeleteArrays delete = {0};
-	SPIPlanPtr        plan;
-	Portal            portal;
-	StringInfoData    sql;
-	int               count = 0;
-	int16             typlen;
-	bool              typbyval;
-	char              typalign;
-	Size             *tablesize = palloc((SEGCOUNT + 1) * sizeof(*tablesize));
+	SPIPlanPtr     plan;
+	Portal         portal;
+	StringInfoData sql;
+	int            count = 0;
+	int16          typlen;
+	bool           typbyval;
+	char           typalign;
+	Size          *tablesize = palloc((SEGCOUNT + 1) * sizeof(*tablesize));
 
 	get_typlenbyvalalign(INT8OID, &typlen, &typbyval, &typalign);
 
