@@ -809,8 +809,9 @@ refresh_disk_quota_model(bool is_init)
 static void
 refresh_disk_quota_usage(bool is_init)
 {
-	volatile bool pushed_active_snap = false;
-	volatile bool ret                = true;
+	volatile bool  pushed_active_snap = false;
+	volatile bool  ret                = true;
+	StringInfoData active_oids        = {0};
 
 	StartTransactionCommand();
 
@@ -821,8 +822,6 @@ refresh_disk_quota_usage(bool is_init)
 	 */
 	PG_TRY();
 	{
-		StringInfoData active_oids;
-
 		PushActiveSnapshot(GetTransactionSnapshot());
 		pushed_active_snap = true;
 		/*
@@ -849,7 +848,6 @@ refresh_disk_quota_usage(bool is_init)
 		 */
 		if (is_init || (diskquota_hardlimit && (reject_map_changed || hasActiveTable)))
 			dispatch_rejectmap(active_oids.data);
-		pfree(active_oids.data);
 	}
 	PG_CATCH();
 	{
@@ -862,7 +860,7 @@ refresh_disk_quota_usage(bool is_init)
 		RESUME_INTERRUPTS();
 	}
 	PG_END_TRY();
-	if (local_active_table_stat_map) hash_destroy(local_active_table_stat_map);
+	if (active_oids.data) pfree(active_oids.data);
 	if (pushed_active_snap) PopActiveSnapshot();
 	if (ret)
 		CommitTransactionCommand();
