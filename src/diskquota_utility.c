@@ -1264,71 +1264,6 @@ out:
 	return ret;
 }
 
-/*
- * Get the list of oids of the tables which diskquota
- * needs to care about in the database.
- * Firstly the all the table oids which relkind is 'r'
- * or 'm' and not system table. On init stage, oids from
- * diskquota.table_size are added to invalidate them.
- * Then, fetch the indexes of those tables.
- */
-
-List *
-get_rel_oid_list(bool is_init)
-{
-	List *oidlist                    = NIL;
-	bool  connected_in_this_function = SPI_connect_if_not_yet();
-
-#define SELECT_FROM_PG_CATALOG_PG_CLASS "select oid from pg_catalog.pg_class where oid >= $1 and relkind in ('r', 'm')"
-
-	int ret = SPI_execute_with_args(is_init ? SELECT_FROM_PG_CATALOG_PG_CLASS
-	                                        " union distinct"
-	                                        " select tableid from diskquota.table_size where segid = -1"
-	                                        : SELECT_FROM_PG_CATALOG_PG_CLASS,
-	                                1,
-	                                (Oid[]){
-	                                        OIDOID,
-	                                },
-	                                (Datum[]){
-	                                        ObjectIdGetDatum(FirstNormalObjectId),
-	                                },
-	                                NULL, false, 0);
-
-#undef SELECT_FROM_PG_CATALOG_PG_CLASS
-
-	if (ret != SPI_OK_SELECT) elog(ERROR, "cannot fetch in pg_class. error code %d", ret);
-
-	TupleDesc tupdesc = SPI_tuptable->tupdesc;
-	for (int i = 0; i < SPI_processed; i++)
-	{
-		HeapTuple tup;
-		bool      isnull;
-		Oid       oid;
-		ListCell *l;
-
-		tup = SPI_tuptable->vals[i];
-		oid = DatumGetObjectId(SPI_getbinval(tup, tupdesc, 1, &isnull));
-		if (!isnull)
-		{
-			List         *indexIds;
-			MemoryContext oldcontext = MemoryContextSwitchTo(CurTransactionContext);
-			oidlist                  = lappend_oid(oidlist, oid);
-			indexIds                 = diskquota_get_index_list(oid);
-			if (indexIds != NIL)
-			{
-				foreach (l, indexIds)
-				{
-					oidlist = lappend_oid(oidlist, lfirst_oid(l));
-				}
-			}
-			list_free(indexIds);
-			MemoryContextSwitchTo(oldcontext);
-		}
-	}
-	SPI_finish_if(connected_in_this_function);
-	return oidlist;
-}
-
 typedef struct
 {
 	char *relation_path;
@@ -1713,4 +1648,19 @@ SPI_finish_if(bool connected_in_calling_function)
 	ereportif(rc != SPI_OK_FINISH, ERROR,
 	          (errcode(ERRCODE_INTERNAL_ERROR), errmsg("[diskquota] SPI_finish failed"),
 	           errdetail("%s", SPI_result_code_string(rc))));
+}
+
+Datum
+SPI_getbinval_wrapper(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null, Oid typeid)
+{
+	bool  isnull;
+	Datum datum;
+	int   fnumber = SPI_fnumber(tupdesc, fname);
+	if (SPI_gettypeid(tupdesc, fnumber) != typeid)
+		ereport(ERROR, (errcode(ERRCODE_MOST_SPECIFIC_TYPE_MISMATCH),
+		                errmsg("type of column \"%s\" must be \"%i\"", fname, typeid)));
+	datum = SPI_getbinval(tuple, tupdesc, fnumber, &isnull);
+	if (isnull && !allow_null)
+		ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED), errmsg("column \"%s\" must not be null", fname)));
+	return datum;
 }
