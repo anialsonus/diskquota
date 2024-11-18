@@ -958,10 +958,10 @@ disk_quota_launcher_main(Datum main_arg)
 static void
 create_monitor_db_table(void)
 {
-	const char *sql;
-	bool        connected_in_this_function = false;
-	bool        pushed_active_snap         = false;
-	bool        ret                        = true;
+	const char   *sql;
+	volatile bool connected_in_this_function = false;
+	volatile bool pushed_active_snap         = false;
+	volatile bool ret                        = true;
 
 	/*
 	 * Create function diskquota.diskquota_fetch_table_stat in launcher
@@ -1167,9 +1167,9 @@ process_extension_ddl_message()
 static void
 do_process_extension_ddl_message(MessageResult *code, ExtensionDDLMessage local_extension_ddl_message)
 {
-	int  old_num_db         = num_db;
-	bool pushed_active_snap = false;
-	bool ret                = true;
+	int           old_num_db         = num_db;
+	volatile bool pushed_active_snap = false;
+	volatile bool ret                = true;
 
 	StartTransactionCommand();
 
